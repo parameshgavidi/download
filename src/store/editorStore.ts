@@ -170,13 +170,32 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
   importRemoteVideos: async (items) => {
     const files: File[] = [];
+    const errors: string[] = [];
     for (const item of items) {
-      const res = await fetch(item.url);
-      if (!res.ok) continue;
-      const blob = await res.blob();
-      files.push(new File([blob], item.name, { type: blob.type || "video/mp4" }));
+      if (!item.url || /^https?:\/\/(www\.)?(youtube\.com|youtu\.be)\//i.test(item.url)) {
+        errors.push(`${item.name}: needs a downloaded MP4, not a YouTube page`);
+        continue;
+      }
+      try {
+        const res = await fetch(item.url);
+        if (!res.ok) {
+          errors.push(`${item.name}: could not read the saved file (${res.status})`);
+          continue;
+        }
+        const blob = await res.blob();
+        if (!blob.size) {
+          errors.push(`${item.name}: saved file is empty`);
+          continue;
+        }
+        files.push(new File([blob], item.name, { type: blob.type || "video/mp4" }));
+      } catch {
+        errors.push(`${item.name}: failed to read the saved MP4`);
+      }
     }
     if (files.length) await get().importFiles(files);
+    if (!files.length) {
+      throw new Error(errors[0] || "No downloaded MP4 files were available to merge.");
+    }
   },
   addText: () => {
     if (!get().project) return;

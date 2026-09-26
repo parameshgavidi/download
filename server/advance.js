@@ -378,18 +378,24 @@ function publicPack(root, pack) {
   const keyword = pack.keyword;
   const videos = [...pack.videos]
     .sort((a, b) => b.views - a.views)
-    .map((video, index) => ({
-      ...video,
-      rank: index + 1,
-      viewsLabel: formatViews(video.views),
-      youtubeUrl: video.youtubeUrl || video.url,
-      fileUrl: video.filename
+    .map((video, index) => {
+      const stored = video.filename ? join(packDir(root, keyword), "videos", video.filename) : "";
+      const hasFile = Boolean(stored && existsSync(stored));
+      const fileUrl = hasFile
         ? `/downloads/${encodeURIComponent(keyword)}/videos/${encodeURIComponent(video.filename)}`
-        : "",
-      url: video.filename
-        ? `/downloads/${encodeURIComponent(keyword)}/videos/${encodeURIComponent(video.filename)}`
-        : video.url,
-    }));
+        : "";
+      const youtubeUrl = /youtube\.com|youtu\.be/i.test(String(video.youtubeUrl || video.url || ""))
+        ? canonicalYoutubeUrl(video.youtubeUrl || video.url)
+        : canonicalYoutubeUrl(video.id);
+      return {
+        ...video,
+        rank: index + 1,
+        viewsLabel: formatViews(video.views),
+        youtubeUrl,
+        fileUrl,
+        url: fileUrl || youtubeUrl,
+      };
+    });
   return {
     keyword,
     videos,
