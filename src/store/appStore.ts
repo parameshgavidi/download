@@ -10,6 +10,7 @@ export interface Settings {
   displayName: string;
   defaultDownloadPath: string;
   cookiesPath: string;
+  cookiesBrowser: "chrome" | "edge" | "firefox" | "";
   exportQuality: "720p" | "1080p" | "4k";
   defaultAspect: AspectRatio;
 }
@@ -29,6 +30,7 @@ const defaultSettings: Settings = {
   displayName: "Logged in",
   defaultDownloadPath: "",
   cookiesPath: "",
+  cookiesBrowser: "chrome",
   exportQuality: "1080p",
   defaultAspect: "9:16",
 };
@@ -110,5 +112,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ settings });
   },
 }));
+
+export function youtubeAuth(settings: Settings) {
+  return {
+    cookies: settings.cookiesPath,
+    cookiesBrowser: settings.cookiesBrowser,
+  };
+}
 
 export const PROJECT_LIMIT = MAX_PROJECTS;

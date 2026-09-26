@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import * as XLSX from "xlsx";
 import Sidebar from "../components/Sidebar";
 import { formatClock } from "../lib/time";
-import { useAppStore } from "../store/appStore";
+import { useAppStore, youtubeAuth } from "../store/appStore";
 
 interface ResearchVideo {
   id: string;
@@ -206,7 +206,7 @@ export default function AdvanceSearchPage() {
       const res = await fetch("/api/advance/research", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ keyword, cookies: settings.cookiesPath }),
+        body: JSON.stringify({ keyword, ...youtubeAuth(settings) }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
@@ -242,7 +242,7 @@ export default function AdvanceSearchPage() {
         body: JSON.stringify({
           keyword,
           queries,
-          cookies: settings.cookiesPath,
+          ...youtubeAuth(settings),
           sourceVideoId: top?.id,
         }),
       });
@@ -278,7 +278,7 @@ export default function AdvanceSearchPage() {
           const payload: Record<string, string | number | undefined> = {
             keyword,
             query,
-            cookies: settings.cookiesPath,
+            ...youtubeAuth(settings),
             sourceVideoId: top?.id,
           };
           if (video && youtubeHref(video)) {

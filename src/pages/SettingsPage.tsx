@@ -38,15 +38,29 @@ export default function SettingsPage() {
               : "FFmpeg is not visible to this app yet. If WinGet already installed it, close VS Code completely and reopen, then run npm run dev again."}
           </p>
           <div className="field">
-            <label>YouTube cookies.txt</label>
+            <label>Use logged-in browser</label>
+            <select
+              value={settings.cookiesBrowser}
+              onChange={(e) =>
+                updateSettings({ cookiesBrowser: e.target.value as typeof settings.cookiesBrowser })
+              }
+            >
+              <option value="chrome">Chrome (recommended)</option>
+              <option value="edge">Edge</option>
+              <option value="firefox">Firefox</option>
+              <option value="">None — cookies.txt only</option>
+            </select>
+            <p className="sub">
+              Stay logged into YouTube in that browser. This app cannot copy another tab from here; it reads the browser cookie store on your PC. If Chrome is locking cookies, close every Chrome window and try again.
+            </p>
+          </div>
+          <div className="field">
+            <label>YouTube cookies.txt (optional backup)</label>
             <input
               value={settings.cookiesPath}
               placeholder="C:\Users\You\Downloads\cookies.txt"
               onChange={(e) => updateSettings({ cookiesPath: e.target.value })}
             />
-            <p className="sub">
-              YouTube often blocks downloads until this is set. In Chrome, install “Get cookies.txt LOCALLY”, open youtube.com while logged in, export the file, then paste that full path here.
-            </p>
           </div>
           <div className="field">
             <label>Default download folder</label>
