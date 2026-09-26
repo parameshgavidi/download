@@ -548,6 +548,29 @@ h1, h2, h3 { margin: 0; font-weight: 650; }
   color: var(--muted);
 }
 .rank-table th { color: #c7c7ce; font-weight: 600; }
+.check-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 360px;
+  overflow: auto;
+  margin: 12px 0;
+  padding: 8px;
+  background: #101014;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.check-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  color: var(--text);
+  cursor: pointer;
+}
+.check-item:hover { background: #1a1a20; }
+.check-item input { margin-top: 3px; accent-color: var(--blue); }
 
 @media (max-width: 1100px) {
   .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }

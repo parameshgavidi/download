@@ -50,22 +50,30 @@ function formatViews(n) {
 
 function extractPhrases(title, description = "") {
   const phrases = [];
+  const skip = /subscribe|follow me|link in|these ads are included|the votes are in|results in detail|thanks to everybody/i;
   const push = (value) => {
-    const clean = String(value || "").replace(/\s+/g, " ").trim();
-    if (clean.length < 3 || clean.length > 90) return;
+    const clean = String(value || "")
+      .replace(/\s+/g, " ")
+      .replace(/["“”]/g, "")
+      .trim();
+    if (clean.length < 3 || clean.length > 72) return;
+    if (skip.test(clean)) return;
     if (!phrases.some((item) => item.toLowerCase() === clean.toLowerCase())) phrases.push(clean);
   };
   push(title);
+  for (const match of description.matchAll(/^\s*\d+[.)]\s+(.+)$/gm)) {
+    push(match[1].split("—")[0].split(" - ")[0]);
+  }
   for (const tag of description.match(/#[\p{L}\p{N}_]+/gu) || []) {
     push(tag.slice(1).replace(/[_-]+/g, " "));
   }
   for (const line of description.split(/\r?\n/)) {
-    const trimmed = line.replace(/^[-*•\d.)\s]+/, "").trim();
-    if (trimmed && !/^http/i.test(trimmed) && !/subscribe|follow me|link in/i.test(trimmed)) {
+    const trimmed = line.replace(/^[-*•]\s+/, "").trim();
+    if (trimmed && !/^\d+[.)]/.test(trimmed) && !/^http/i.test(trimmed) && !skip.test(trimmed)) {
       push(trimmed);
     }
   }
-  return phrases.slice(0, 12);
+  return phrases.slice(0, 20);
 }
 
 function normalizeEntry(entry) {
