@@ -19,7 +19,7 @@ import {
   ZoomOut,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import Inspector from "../components/editor/Inspector";
 import PreviewStage from "../components/editor/PreviewStage";
 import Timeline from "../components/editor/Timeline";
@@ -29,10 +29,16 @@ import { useAppStore } from "../store/appStore";
 
 export default function EditorPage() {
   const { id } = useParams();
+  const [params] = useSearchParams();
   const navigate = useNavigate();
   const fileRef = useRef<HTMLInputElement>(null);
+  const loadedPack = useRef("");
   const [mutedAll, setMutedAll] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
+  const [packs, setPacks] = useState<{ keyword: string; videos: { url: string; filename?: string; title: string }[] }[]>([]);
+  const [packKeyword, setPackKeyword] = useState(params.get("pack") || "");
+  const [packMeta, setPackMeta] = useState<{ title: string; description: string; tags: string[]; keywords: string[]; thumbnail: string } | null>(null);
+  const [loadingPack, setLoadingPack] = useState(false);
   const load = useAppStore((s) => s.load);
   const project = useEditorStore((s) => s.project);
   const loadProject = useEditorStore((s) => s.loadProject);
@@ -45,6 +51,7 @@ export default function EditorPage() {
   const setZoom = useEditorStore((s) => s.setZoom);
   const toggleSnap = useEditorStore((s) => s.toggleSnap);
   const importFiles = useEditorStore((s) => s.importFiles);
+  const importRemoteVideos = useEditorStore((s) => s.importRemoteVideos);
   const addText = useEditorStore((s) => s.addText);
   const addShape = useEditorStore((s) => s.addShape);
   const undo = useEditorStore((s) => s.undo);
@@ -64,6 +71,47 @@ export default function EditorPage() {
   useEffect(() => {
     if (id) loadProject(id);
   }, [id, loadProject]);
+
+  useEffect(() => {
+    void fetch("/api/advance/packs")
+      .then((res) => res.json())
+      .then((data) => setPacks(data.packs || []))
+      .catch(() => undefined);
+  }, []);
+
+  async function loadKeywordFolder(keyword: string) {
+    if (!keyword) return;
+    setLoadingPack(true);
+    try {
+      const res = await fetch(`/api/advance/packs/${encodeURIComponent(keyword)}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setPackMeta(data.metadata);
+      const items = [...(data.videos || [])]
+        .sort((a: { rank: number }, b: { rank: number }) => a.rank - b.rank)
+        .filter((video: { url: string; filename?: string }) => Boolean(video.filename || video.url))
+        .map((video: { url: string; filename?: string; title: string }) => ({
+          url: video.url,
+          name: video.filename || `${video.title}.mp4`,
+        }));
+      useEditorStore.getState().setPlayhead(0);
+      await importRemoteVideos(items);
+      if (data.metadata?.title) rename(data.metadata.title);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Could not load that keyword folder");
+    } finally {
+      setLoadingPack(false);
+    }
+  }
+
+  useEffect(() => {
+    const pack = params.get("pack");
+    if (pack && project && project.clips.length === 0 && loadedPack.current !== pack) {
+      loadedPack.current = pack;
+      setPackKeyword(pack);
+      void loadKeywordFolder(pack);
+    }
+  }, [params, project]);
 
   useEffect(() => {
     document.querySelectorAll("video, audio").forEach((el) => {
@@ -245,7 +293,27 @@ export default function EditorPage() {
         <div className="modal-backdrop" onClick={() => setLibraryOpen(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <h3>Media</h3>
-            <p className="sub">Import files or drop them on the timeline.</p>
+            <p className="sub">Import files, or load an Advance Search keyword folder in top-view order.</p>
+            <div className="field">
+              <label>Main keyword folder</label>
+              <div className="row grow">
+                <select value={packKeyword} onChange={(e) => setPackKeyword(e.target.value)}>
+                  <option value="">Select keyword folder</option>
+                  {packs.map((item) => (
+                    <option key={item.keyword} value={item.keyword}>{item.keyword}</option>
+                  ))}
+                </select>
+                <button className="primary" style={{ flex: "0 0 auto" }} disabled={!packKeyword || loadingPack} onClick={() => void loadKeywordFolder(packKeyword)}>
+                  {loadingPack ? "Loading…" : "Load by views"}
+                </button>
+              </div>
+            </div>
+            {packMeta && (
+              <div className="sub" style={{ marginBottom: 12 }}>
+                <div><strong>{packMeta.title}</strong></div>
+                <div>Tags: {packMeta.tags.slice(0, 8).join(", ")}</div>
+              </div>
+            )}
             <div className="downloads-list">
               {project.media.length === 0 && <div className="sub">No media yet.</div>}
               {project.media.map((media) => (
@@ -255,7 +323,7 @@ export default function EditorPage() {
                 </div>
               ))}
             </div>
-            <button className="primary" style={{ marginTop: 14 }} onClick={() => fileRef.current?.click()}>
+            <button className="ghost" style={{ marginTop: 14 }} onClick={() => fileRef.current?.click()}>
               Import media
             </button>
           </div>

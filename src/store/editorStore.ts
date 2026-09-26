@@ -76,6 +76,7 @@ interface EditorState {
   toggleSnap: () => void;
   select: (id: string | null) => void;
   importFiles: (files: FileList | File[]) => Promise<void>;
+  importRemoteVideos: (items: { url: string; name: string }[]) => Promise<void>;
   addText: () => void;
   addShape: (shape?: Clip["shape"]) => void;
   updateClip: (id: string, patch: Partial<Clip>) => void;
@@ -166,6 +167,16 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
     set({ project, selectedId: project.clips.at(-1)?.id ?? null, ...history });
     get().persist();
+  },
+  importRemoteVideos: async (items) => {
+    const files: File[] = [];
+    for (const item of items) {
+      const res = await fetch(item.url);
+      if (!res.ok) continue;
+      const blob = await res.blob();
+      files.push(new File([blob], item.name, { type: blob.type || "video/mp4" }));
+    }
+    if (files.length) await get().importFiles(files);
   },
   addText: () => {
     if (!get().project) return;

@@ -17,6 +17,17 @@ npm run dev
 
 YouTube downloads use `yt-dlp` (`python3 -m yt_dlp`) and `ffmpeg` for merging video + audio.
 
+## Advance Search
+
+1. Open **Advance Search**
+2. Upload an Excel sheet of keywords
+3. Select a keyword and search YouTube — the top video description fills the second dropdown
+4. Download the top viewed video into that keyword’s folder
+5. Open **Merge in editor** to line the clips up from most viewed to least viewed
+6. Copy the generated YouTube title, description, tags, and thumbnail
+
+Each keyword folder also has `ranking.xlsx` for the top-viewers order.
+
 ## Editor shortcuts
 
 - Space — play / pause

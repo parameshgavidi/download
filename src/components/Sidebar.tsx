@@ -1,4 +1,4 @@
-import { Download, Home, Plus, Settings, User } from "lucide-react";
+import { Download, Home, Plus, Search, Settings, User } from "lucide-react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { PROJECT_LIMIT, useAppStore } from "../store/appStore";
 
@@ -27,6 +27,9 @@ export default function Sidebar() {
         </NavLink>
         <NavLink to="/download">
           <Download size={18} /> Download
+        </NavLink>
+        <NavLink to="/advance">
+          <Search size={18} /> Advance Search
         </NavLink>
         <NavLink to="/settings">
           <Settings size={18} /> Settings

@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently -k -n web,api -c cyan,magenta \"vite\" \"node server/index.js\"",
+    "dev": "concurrently -n web,api -c cyan,magenta \"vite --port 5173\" \"node server/index.js\"",
     "dev:web": "vite",
     "dev:api": "node server/index.js",
     "build": "tsc --noEmit && vite build",
@@ -17,6 +17,7 @@
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-router-dom": "^7.18.4",
+    "xlsx": "^0.18.5",
     "zustand": "^5.0.15"
   },
   "devDependencies": {
