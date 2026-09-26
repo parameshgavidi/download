@@ -113,65 +113,8 @@ async function searchYoutube(query, cookies, limit = 10) {
   return entries.map(normalizeEntry).filter((item) => item.url).sort((a, b) => b.views - a.views);
 }
 
-const COPY_MARKERS = /reupload|re-upload|copied from|from youtube|no copyright intended|full compilation|all ads in one|mirrored upload|youtube copy|not the official/i;
-const COMPILATION_MARKERS = /compilation|top\s*\d+|top ten|countdown|every super bowl|famous funny commercials|best ads|ads ranked/i;
-const ENTERTAINMENT_MARKERS = /music video|full movie|gameplay|podcast|vlog|live stream|reaction|reacts to|explained|behind the scenes|making of|leaked audio|full album/i;
-const COMMERCIAL_MARKERS = /commercial|advert|tv ad|tv spot|super bowl ad|brand film| :15| :30| :60|\b15s\b|\b30s\b|\b60s\b|30-second|60-second/i;
-
-function isYoutubeCopy(video, sourceId) {
-  if (sourceId && video.id === sourceId) return true;
-  const text = `${video.title} ${video.description || ""}`;
-  if (COPY_MARKERS.test(text)) return true;
-  if (video.duration > 180 && COMPILATION_MARKERS.test(video.title)) return true;
-  return false;
-}
-
-function isCommercialLength(video) {
-  if (!video.duration) return true;
-  return video.duration >= 8 && video.duration <= 210;
-}
-
-function commercialScore(video, query) {
-  let score = Number(video.views) || 0;
-  if (video.duration >= 15 && video.duration <= 90) score *= 1.2;
-  if (COMMERCIAL_MARKERS.test(video.title)) score *= 1.12;
-  if (/official/i.test(video.title) && COMMERCIAL_MARKERS.test(video.title)) score *= 1.05;
-  const words = String(query).toLowerCase().split(/[^a-z0-9]+/).filter((word) => word.length > 2);
-  const title = video.title.toLowerCase();
-  score *= 1 + words.filter((word) => title.includes(word)).length * 0.06;
-  return score;
-}
-
-function pickCommercial(results, { sourceId, query, existingIds }) {
-  return [...results]
-    .filter((video) => video.url && !existingIds.has(video.id))
-    .filter((video) => !isYoutubeCopy(video, sourceId))
-    .filter((video) => isCommercialLength(video))
-    .sort((a, b) => commercialScore(b, query) - commercialScore(a, query))[0];
-}
-
-function judgeCommercial(video, query = "") {
-  if (!video) return { ok: false, reason: "No video found", confidence: 0 };
-  if (isYoutubeCopy(video)) return { ok: false, reason: "Looks like a YouTube copy or compilation", confidence: 10 };
-  if (video.duration && video.duration < 8) return { ok: false, reason: "Too short for a TV commercial", confidence: 15 };
-  if (video.duration && video.duration > 210) return { ok: false, reason: "Too long — likely a compilation, not one commercial", confidence: 20 };
-  const text = `${video.title} ${video.description || ""} ${query}`;
-  if (ENTERTAINMENT_MARKERS.test(text) && !COMMERCIAL_MARKERS.test(text)) {
-    return { ok: false, reason: "Looks like entertainment, not a brand commercial", confidence: 20 };
-  }
-  let confidence = 55;
-  if (video.duration >= 15 && video.duration <= 90) confidence += 20;
-  if (COMMERCIAL_MARKERS.test(text)) confidence += 15;
-  if (/official/i.test(video.title) && COMMERCIAL_MARKERS.test(video.title)) confidence += 5;
-  const firstWord = String(query).toLowerCase().split(/[^a-z0-9]+/).find((word) => word.length > 2);
-  if (firstWord && video.title.toLowerCase().includes(firstWord)) confidence += 5;
-  return {
-    ok: confidence >= 60,
-    reason: confidence >= 60
-      ? "Looks like a single brand commercial (heuristic only — not a rights check)"
-      : "Not confident this is a standalone commercial",
-    confidence: Math.min(95, confidence),
-  };
+function pickTopVideo(results, existingIds) {
+  return [...results].find((video) => video.url && video.id && !existingIds.has(video.id)) || null;
 }
 
 async function probeVideo(url, cookies) {
@@ -192,14 +135,9 @@ function cleanupSplitFiles(dir, videoId) {
   }
 }
 
-async function findCommercial(query, cookies, sourceId, existingIds) {
-  let results = await searchYoutube(`${query} official commercial`, cookies, 12);
-  let video = pickCommercial(results, { sourceId, query, existingIds });
-  if (!video) {
-    results = await searchYoutube(query, cookies, 12);
-    video = pickCommercial(results, { sourceId, query, existingIds });
-  }
-  return video;
+async function findVideo(query, cookies, existingIds) {
+  const results = await searchYoutube(query, cookies, 8);
+  return pickTopVideo(results, existingIds);
 }
 
 function loadPack(root, keyword) {
@@ -413,7 +351,7 @@ function publicPack(root, pack) {
   };
 }
 
-export { judgeCommercial, youtubeIdFrom, canonicalYoutubeUrl };
+export { youtubeIdFrom, canonicalYoutubeUrl };
 
 export function registerAdvanceRoutes(app, { downloadsRoot, jobs }) {
   const metaPath = join(downloadsRoot, META_DIR, "keywords.json");
@@ -470,30 +408,27 @@ export function registerAdvanceRoutes(app, { downloadsRoot, jobs }) {
     const cookies = readCookieOptions(req.body);
     if (!keyword || !queries.length) return res.status(400).json({ error: "Select at least one commercial phrase." });
     const pack = loadPack(downloadsRoot, keyword);
-    const sourceId = req.body?.sourceVideoId || pack.sourceVideoId || pack.research?.top?.id;
     const usedIds = new Set(pack.videos.map((video) => youtubeIdFrom(video.id || video.youtubeUrl || video.url)).filter(Boolean));
     const usedUrls = new Set(pack.videos.map((video) => canonicalYoutubeUrl(video.youtubeUrl || video.url)).filter(Boolean));
     const items = [];
     try {
       for (const query of queries) {
-        const video = await findCommercial(query, cookies, sourceId, usedIds);
+        const video = await findVideo(query, cookies, usedIds);
         if (!video) {
-          items.push({ query, ok: false, duplicate: false, reason: "No individual commercial found", video: null });
+          items.push({ query, ok: false, duplicate: false, reason: "No YouTube video found", video: null });
           continue;
         }
         const youtubeUrl = canonicalYoutubeUrl(video.id || video.url);
-        const judge = judgeCommercial(video, query);
         const duplicate = usedIds.has(video.id) || usedUrls.has(youtubeUrl);
-        if (!duplicate && judge.ok) {
+        if (!duplicate) {
           usedIds.add(video.id);
           usedUrls.add(youtubeUrl);
         }
         items.push({
           query,
-          ok: judge.ok && !duplicate,
+          ok: !duplicate,
           duplicate,
-          reason: duplicate ? "Same YouTube link as another selected commercial" : judge.reason,
-          confidence: judge.confidence,
+          reason: duplicate ? "Same YouTube link as another selected video" : "Ready to download",
           video: { ...video, url: youtubeUrl, youtubeUrl },
         });
       }
@@ -515,7 +450,6 @@ export function registerAdvanceRoutes(app, { downloadsRoot, jobs }) {
         });
       }
       const pack = loadPack(downloadsRoot, keyword);
-      const sourceId = req.body?.sourceVideoId || pack.sourceVideoId || pack.research?.top?.id;
       const existingIds = new Set(pack.videos.map((video) => youtubeIdFrom(video.id || video.youtubeUrl || video.url)).filter(Boolean));
       const existingUrls = new Set(pack.videos.map((video) => canonicalYoutubeUrl(video.youtubeUrl || video.url)).filter(Boolean));
       let top = null;
@@ -538,18 +472,14 @@ export function registerAdvanceRoutes(app, { downloadsRoot, jobs }) {
         if (req.body.title && !top.title) top.title = req.body.title;
         if (req.body.views) top.views = Number(req.body.views);
       } else {
-        top = await findCommercial(query, cookies, sourceId, existingIds);
+        top = await findVideo(query, cookies, existingIds);
       }
       if (!top) {
         return res.status(404).json({
-          error: `No individual commercial found for “${query}”. Skipped YouTube copies and compilation reuploads.`,
+          error: `No YouTube video found for “${query}”.`,
         });
       }
       top.url = canonicalYoutubeUrl(top.id || top.url);
-      const judge = judgeCommercial(top, query);
-      if (!judge.ok) {
-        return res.status(400).json({ error: `${judge.reason}. We only download likely commercial spots.` });
-      }
       if (existingIds.has(top.id) || existingUrls.has(top.url)) {
         return res.json({ already: true, pack: publicPack(downloadsRoot, savePack(downloadsRoot, pack)), video: { ...top, youtubeUrl: top.url } });
       }
