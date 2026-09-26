@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { delimiter, dirname, join } from "node:path";
 import os from "node:os";
 
@@ -35,10 +35,10 @@ export function ensureYtDlp() {
 
 export function youtubeBotMessage(raw = "") {
   if (/cookie database|could not copy|failed to decrypt/i.test(raw)) {
-    return "Chrome is locking its cookies. Close every Chrome window, then try Download again. Settings can also use a cookies.txt file.";
+    return "Chrome is still locking cookies (background chrome.exe is enough). In Settings click “Stop Chrome and copy cookies”, or export cookies.txt with the Get cookies.txt LOCALLY extension. That file is the most reliable way.";
   }
   if (!/sign in to confirm|not a bot|cookies-from-browser|--cookies/i.test(raw)) return "";
-  return "YouTube blocked this request (bot check). In Settings choose “Use Chrome login”, keep Chrome logged into YouTube, then try again. If Chrome is open and it still fails, close Chrome first.";
+  return "YouTube blocked this request (bot check). Best fix: export cookies.txt from Chrome (Get cookies.txt LOCALLY) and paste the file path in Settings. Or click “Stop Chrome and copy cookies”.";
 }
 
 export function missingYtDlpMessage(raw = "") {
@@ -163,6 +163,98 @@ export function ffmpegAvailable() {
 
 const BROWSERS = new Set(["chrome", "edge", "firefox", "brave", "opera", "chromium"]);
 
+const BROWSER_PROCESS = {
+  chrome: "chrome.exe",
+  edge: "msedge.exe",
+  chromium: "chrome.exe",
+  brave: "brave.exe",
+};
+
+let copiedProfile = { browser: "", path: "", at: 0 };
+
+function copyLoose(src, dest) {
+  if (!src || !existsSync(src)) return false;
+  mkdirSync(dirname(dest), { recursive: true });
+  try {
+    copyFileSync(src, dest);
+    return existsSync(dest);
+  } catch {
+    // Chrome often locks the cookie DB; a raw read can still work
+  }
+  try {
+    writeFileSync(dest, readFileSync(src));
+    return existsSync(dest);
+  } catch {
+    // try Windows copy next
+  }
+  if (process.platform === "win32") {
+    const copied = spawnSync("cmd.exe", ["/c", "copy", "/y", src, dest], { encoding: "utf8", windowsHide: true });
+    if (copied.status === 0 && existsSync(dest)) return true;
+  }
+  return false;
+}
+
+function browserUserData(browser) {
+  const local = process.env.LOCALAPPDATA || join(os.homedir(), "AppData", "Local");
+  if (browser === "edge") return join(local, "Microsoft", "Edge", "User Data");
+  if (browser === "brave") return join(local, "BraveSoftware", "Brave-Browser", "User Data");
+  if (browser === "chromium") return join(local, "Chromium", "User Data");
+  return join(local, "Google", "Chrome", "User Data");
+}
+
+function cookieFiles(profileDir) {
+  return [
+    join(profileDir, "Network", "Cookies"),
+    join(profileDir, "Cookies"),
+  ].filter((file) => existsSync(file));
+}
+
+export function copyBrowserProfile(browser) {
+  if (browser === "firefox" || !BROWSERS.has(browser)) return "";
+  const userData = browserUserData(browser);
+  const sourceProfile = join(userData, "Default");
+  const sourceState = join(userData, "Local State");
+  if (!existsSync(sourceProfile)) return "";
+  const destRoot = join(os.tmpdir(), "pgve-cookies", browser);
+  try {
+    rmSync(destRoot, { recursive: true, force: true });
+  } catch {
+    // old temp profile
+  }
+  const destProfile = join(destRoot, "Default");
+  mkdirSync(join(destProfile, "Network"), { recursive: true });
+  if (existsSync(sourceState)) copyLoose(sourceState, join(destRoot, "Local State"));
+  const sources = cookieFiles(sourceProfile);
+  let copied = false;
+  for (const src of sources) {
+    const destPath = /Network/.test(src) ? join(destProfile, "Network", "Cookies") : join(destProfile, "Cookies");
+    if (copyLoose(src, destPath)) copied = true;
+    const journal = `${src}-journal`;
+    if (existsSync(journal)) copyLoose(journal, `${destPath}-journal`);
+  }
+  if (!copied) return "";
+  copiedProfile = { browser, path: destProfile, at: Date.now() };
+  return destProfile;
+}
+
+export function stopBrowser(browser) {
+  const exe = BROWSER_PROCESS[browser];
+  if (!exe || process.platform !== "win32") return false;
+  spawnSync("taskkill", ["/F", "/IM", exe], { encoding: "utf8", windowsHide: true });
+  spawnSync("taskkill", ["/F", "/IM", "chrome.exe"], { encoding: "utf8", windowsHide: true });
+  return true;
+}
+
+export function browserCookieSource(browser) {
+  if (!browser || !BROWSERS.has(browser)) return "";
+  if (copiedProfile.browser === browser && copiedProfile.path && existsSync(copiedProfile.path) && Date.now() - copiedProfile.at < 60 * 60 * 1000) {
+    return `${browser}:${copiedProfile.path}`;
+  }
+  const copied = copyBrowserProfile(browser);
+  if (copied) return `${browser}:${copied}`;
+  return browser;
+}
+
 export function readCookieOptions(body = {}) {
   return {
     file: String(body.cookies || "").trim(),
@@ -175,8 +267,8 @@ export function ytDlpArgs(extra, cookies) {
   const args = [...cached.prefix, "--no-warnings"];
   const ffmpeg = resolveFfmpeg();
   if (ffmpeg) args.push("--ffmpeg-location", ffmpeg);
-  if (auth.browser && BROWSERS.has(auth.browser)) args.push("--cookies-from-browser", auth.browser);
-  else if (auth.file && existsSync(auth.file)) args.push("--cookies", auth.file);
+  if (auth.file && existsSync(auth.file)) args.push("--cookies", auth.file);
+  else if (auth.browser && BROWSERS.has(auth.browser)) args.push("--cookies-from-browser", browserCookieSource(auth.browser));
   args.push(...extra);
   return args;
 }

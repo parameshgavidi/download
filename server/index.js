@@ -12,7 +12,7 @@ import { join, resolve, basename, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import os from "node:os";
 import { randomUUID } from "node:crypto";
-import { runYtDlp, spawnYtDlp, missingYtDlpMessage, ffmpegAvailable, resolveFfmpeg, readCookieOptions } from "./ytdlp.js";
+import { runYtDlp, spawnYtDlp, missingYtDlpMessage, ffmpegAvailable, resolveFfmpeg, readCookieOptions, copyBrowserProfile, stopBrowser } from "./ytdlp.js";
 import { registerAdvanceRoutes } from "./advance.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -111,6 +111,19 @@ function cleanupSplitFiles(dir) {
 
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true, app: "PgVideoEditor", ffmpeg: ffmpegAvailable(), ffmpegPath: resolveFfmpeg() || "" });
+});
+
+app.post("/api/youtube/cookies/prepare", (req, res) => {
+  const browser = String(req.body?.browser || "chrome").trim().toLowerCase() || "chrome";
+  if (req.body?.kill) stopBrowser(browser);
+  const path = copyBrowserProfile(browser);
+  if (!path) {
+    return res.status(400).json({
+      ok: false,
+      error: "Could not copy Chrome cookies. In Task Manager end every chrome.exe process, or export cookies.txt with Get cookies.txt LOCALLY and paste that file path in Settings.",
+    });
+  }
+  res.json({ ok: true, path, browser });
 });
 
 app.get("/api/paths", (req, res) => {
