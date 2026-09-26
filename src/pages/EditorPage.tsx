@@ -35,7 +35,7 @@ export default function EditorPage() {
   const loadedPack = useRef("");
   const [mutedAll, setMutedAll] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
-  const [packs, setPacks] = useState<{ keyword: string; videos: { url: string; filename?: string; title: string }[] }[]>([]);
+  const [packs, setPacks] = useState<{ keyword: string; videos: { id?: string; url: string; fileUrl?: string; filename?: string; title: string }[] }[]>([]);
   const [packKeyword, setPackKeyword] = useState(params.get("pack") || "");
   const [packMeta, setPackMeta] = useState<{ title: string; description: string; tags: string[]; keywords: string[]; thumbnail: string } | null>(null);
   const [loadingPack, setLoadingPack] = useState(false);
@@ -87,13 +87,27 @@ export default function EditorPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       setPackMeta(data.metadata);
-      const items = [...(data.videos || [])]
-        .sort((a: { rank: number }, b: { rank: number }) => a.rank - b.rank)
-        .filter((video: { url: string; filename?: string }) => Boolean(video.filename || video.url))
-        .map((video: { url: string; filename?: string; title: string }) => ({
-          url: video.url,
+      const wanted = (params.get("ids") || "").split(",").map((item) => item.trim()).filter(Boolean);
+      const videos = [...(data.videos || [])] as {
+        id?: string;
+        rank: number;
+        url: string;
+        fileUrl?: string;
+        filename?: string;
+        title: string;
+      }[];
+      const ordered = wanted.length
+        ? wanted.map((id) => videos.find((video) => video.id === id)).filter((video): video is typeof videos[number] => Boolean(video))
+        : videos.sort((a, b) => a.rank - b.rank);
+      const items = ordered
+        .map((video) => ({
+          url: video.fileUrl || (video.url.startsWith("/") ? video.url : ""),
           name: video.filename || `${video.title}.mp4`,
-        }));
+        }))
+        .filter((item) => item.url);
+      if (!items.length) {
+        throw new Error("No downloaded MP4 files in that selection. Review and download the commercials first, then merge.");
+      }
       useEditorStore.getState().setPlayhead(0);
       await importRemoteVideos(items);
       if (data.metadata?.title) rename(data.metadata.title);

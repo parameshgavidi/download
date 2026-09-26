@@ -32,6 +32,7 @@ interface PackVideo extends ResearchVideo {
   viewsLabel: string;
   filename?: string;
   query?: string;
+  fileUrl?: string;
 }
 
 interface Pack {
@@ -69,7 +70,13 @@ function parseKeywords(file: File) {
 }
 
 function youtubeHref(video?: ResearchVideo | null) {
-  return video?.youtubeUrl || video?.url || "";
+  const href = video?.youtubeUrl || "";
+  if (href.startsWith("http") && /youtube\.com|youtu\.be/i.test(href)) return href;
+  return "";
+}
+
+function youtubeIdFromUrl(url: string) {
+  return url.match(/(?:v=|youtu\.be\/|shorts\/|embed\/)([\w-]{11})/)?.[1] || "";
 }
 
 export default function AdvanceSearchPage() {
@@ -90,6 +97,9 @@ export default function AdvanceSearchPage() {
   const [error, setError] = useState("");
   const [job, setJob] = useState<JobStatus | null>(null);
   const [copied, setCopied] = useState("");
+  const [mergeOrder, setMergeOrder] = useState<string[]>([]);
+  const [mergeSelected, setMergeSelected] = useState<string[]>([]);
+  const [preview, setPreview] = useState<PackVideo | null>(null);
 
   useEffect(() => {
     void refreshKeywords();
@@ -125,6 +135,29 @@ export default function AdvanceSearchPage() {
       .map((query) => candidateByQuery.get(query))
       .filter((item): item is Candidate => Boolean(item?.ok && item.video)),
     [selected, candidateByQuery],
+  );
+
+  const packVideos = selectedPack?.videos || [];
+  const packKey = `${selectedPack?.keyword || ""}:${packVideos.map((video) => video.id).join(",")}`;
+
+  useEffect(() => {
+    if (!packVideos.length) {
+      setMergeOrder([]);
+      setMergeSelected([]);
+      return;
+    }
+    setMergeOrder(packVideos.map((video) => video.id));
+    setMergeSelected(packVideos.filter((video) => video.fileUrl).map((video) => video.id));
+  }, [packKey]);
+
+  const mergeVideos = useMemo(
+    () => mergeOrder
+      .map((id, index) => {
+        const video = packVideos.find((item) => item.id === id);
+        return video ? { video, order: index + 1, selected: mergeSelected.includes(id) } : null;
+      })
+      .filter((item): item is { video: PackVideo; order: number; selected: boolean } => Boolean(item)),
+    [mergeOrder, mergeSelected, packVideos],
   );
 
   async function refreshKeywords() {
@@ -294,8 +327,31 @@ export default function AdvanceSearchPage() {
   }
 
   function openEditor() {
+    const chosen = mergeVideos.filter((item) => item.selected && item.video.fileUrl);
+    if (!chosen.length) {
+      setError("Review the clips, select the downloaded MP4s you want, then click Merge.");
+      return;
+    }
+    const ids = chosen.map((item) => item.video.id).join(",");
     const project = createProject(keyword || "Compilation");
-    navigate(`/editor/${project.id}?pack=${encodeURIComponent(keyword)}`);
+    navigate(`/editor/${project.id}?pack=${encodeURIComponent(keyword)}&ids=${encodeURIComponent(ids)}`);
+  }
+
+  function toggleMerge(id: string) {
+    setMergeSelected((current) =>
+      current.includes(id) ? current.filter((item) => item !== id) : [...current, id],
+    );
+  }
+
+  function moveMerge(id: string, direction: -1 | 1) {
+    setMergeOrder((current) => {
+      const index = current.indexOf(id);
+      const nextIndex = index + direction;
+      if (index < 0 || nextIndex < 0 || nextIndex >= current.length) return current;
+      const next = [...current];
+      [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
+      return next;
+    });
   }
 
   async function copy(label: string, value: string) {
@@ -455,50 +511,49 @@ export default function AdvanceSearchPage() {
         </div>
 
         <div className="panel" style={{ marginTop: 18 }}>
-          <h3>4. Merge by each commercial’s own views</h3>
-          <p className="sub">Order is not copied from the source countdown. Rank 1 is the commercial with the most views on its own YouTube page. Title, description, and tags are rewritten from this new ranking.</p>
+          <h3>4. Review, select, order, then merge</h3>
+          <p className="sub">Click Review on each clip, keep only the commercials you want, set the order, then merge. The editor loads only the selected downloaded MP4s — not YouTube pages.</p>
           <p className="sub">Brand ads may be copyrighted. This app does not bypass Content ID or make a compilation monetizable. Upload only what you have rights to use.</p>
-          {selectedPack?.videos.length ? (
-            <table className="rank-table">
-              <thead>
-                <tr>
-                  <th>Rank</th>
-                  <th>Views</th>
-                  <th>Title</th>
-                  <th>YouTube</th>
-                  <th>Search</th>
-                </tr>
-              </thead>
-              <tbody>
-                {selectedPack.videos.map((video) => (
-                  <tr key={video.id}>
-                    <td>{video.rank}</td>
-                    <td>{video.viewsLabel}</td>
-                    <td>{video.title}</td>
-                    <td>
-                      {youtubeHref(video) ? (
-                        <a className="yt-link" href={youtubeHref(video)} target="_blank" rel="noreferrer">
-                          {youtubeHref(video)}
-                        </a>
-                      ) : "—"}
-                    </td>
-                    <td>{video.query || "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          {mergeVideos.length ? (
+            <div className="review-list">
+              {mergeVideos.map(({ video, order, selected }) => (
+                <div key={video.id} className={`review-row ${selected ? "on" : ""}`}>
+                  <input type="checkbox" checked={selected} disabled={!video.fileUrl} onChange={() => toggleMerge(video.id)} />
+                  <div className="review-order">
+                    <button className="icon-btn" type="button" disabled={order === 1} onClick={() => moveMerge(video.id, -1)} aria-label="Move up">↑</button>
+                    <strong>{order}</strong>
+                    <button className="icon-btn" type="button" disabled={order === mergeVideos.length} onClick={() => moveMerge(video.id, 1)} aria-label="Move down">↓</button>
+                  </div>
+                  <div className="review-copy">
+                    <strong>{video.title}</strong>
+                    <span className="sub">{video.viewsLabel} views · {formatClock(video.duration)} · {video.query || "—"}</span>
+                    {youtubeHref(video) && (
+                      <a className="yt-link" href={youtubeHref(video)} target="_blank" rel="noreferrer">{youtubeHref(video)}</a>
+                    )}
+                    <span className={`badge ${video.fileUrl ? "ok" : "no"}`}>
+                      {video.fileUrl ? "Downloaded MP4 ready" : "No local file — download first"}
+                    </span>
+                  </div>
+                  <button className="ghost" type="button" onClick={() => setPreview(video)}>Review</button>
+                </div>
+              ))}
+            </div>
           ) : (
             <p className="sub">No videos in this keyword folder yet.</p>
           )}
           <div className="actions" style={{ justifyContent: "flex-start" }}>
+            <button className="ghost" type="button" disabled={!mergeVideos.some((item) => item.video.fileUrl)} onClick={() => setMergeSelected(mergeVideos.filter((item) => item.video.fileUrl).map((item) => item.video.id))}>
+              Select downloaded
+            </button>
+            <button className="ghost" type="button" disabled={!mergeSelected.length} onClick={() => setMergeSelected([])}>Clear selection</button>
             {selectedPack && (
               <a className="ghost" href={selectedPack.rankingUrl} style={{ textDecoration: "none" }}>
                 Download ranking Excel
               </a>
             )}
-            <button className="primary" onClick={openEditor} disabled={!keyword}>
+            <button className="primary" onClick={openEditor} disabled={!keyword || !mergeVideos.some((item) => item.selected && item.video.fileUrl)}>
               <span style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
-                <Sparkles size={16} /> Merge in editor
+                <Sparkles size={16} /> Merge selected ({mergeVideos.filter((item) => item.selected && item.video.fileUrl).length})
               </span>
             </button>
           </div>
@@ -535,6 +590,47 @@ export default function AdvanceSearchPage() {
         {busy && <p className="sub">{busy}</p>}
         {error && <p className="error">{error}</p>}
       </main>
+
+      {preview && (
+        <div className="modal-backdrop" onClick={() => setPreview(null)}>
+          <div className="modal review-modal" onClick={(event) => event.stopPropagation()}>
+            <h3>{preview.title}</h3>
+            <p className="sub">{preview.channel} · {preview.viewsLabel || preview.views.toLocaleString()} views · {formatClock(preview.duration)}</p>
+            {preview.fileUrl ? (
+              <video className="review-player" src={preview.fileUrl} controls autoPlay />
+            ) : youtubeIdFromUrl(youtubeHref(preview)) ? (
+              <iframe
+                className="review-player"
+                title={preview.title}
+                src={`https://www.youtube.com/embed/${youtubeIdFromUrl(youtubeHref(preview))}`}
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+              />
+            ) : (
+              <p className="sub">No preview available. Download this commercial first.</p>
+            )}
+            {youtubeHref(preview) && (
+              <p className="sub">
+                YouTube: <a className="yt-link" href={youtubeHref(preview)} target="_blank" rel="noreferrer">{youtubeHref(preview)}</a>
+              </p>
+            )}
+            <div className="actions">
+              <button className="ghost" type="button" onClick={() => setPreview(null)}>Close</button>
+              <button
+                className="primary"
+                type="button"
+                disabled={!preview.fileUrl}
+                onClick={() => {
+                  if (!mergeSelected.includes(preview.id)) toggleMerge(preview.id);
+                  setPreview(null);
+                }}
+              >
+                {mergeSelected.includes(preview.id) ? "Keep selected" : "Select this clip"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
