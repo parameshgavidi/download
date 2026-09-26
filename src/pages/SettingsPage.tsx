@@ -62,7 +62,7 @@ export default function SettingsPage() {
           <div className="field">
             <label>Best way to download YouTube videos</label>
             <p className="sub">
-              Export a cookies.txt file. Chrome keeps locking its live cookie database even after you close the window. In Chrome: install “Get cookies.txt LOCALLY”, open youtube.com while logged in, export the file, then paste the full path below.
+              Public YouTube videos can download without Chrome. Leave “Use logged-in browser” on None. Only add cookies.txt if a specific video still asks you to sign in.
             </p>
           </div>
           <div className="field">
@@ -73,10 +73,10 @@ export default function SettingsPage() {
                 updateSettings({ cookiesBrowser: e.target.value as typeof settings.cookiesBrowser })
               }
             >
+              <option value="">None (recommended)</option>
               <option value="chrome">Chrome</option>
               <option value="edge">Edge</option>
               <option value="firefox">Firefox</option>
-              <option value="">None — cookies.txt only</option>
             </select>
             <div className="actions" style={{ justifyContent: "flex-start", marginTop: 10 }}>
               <button

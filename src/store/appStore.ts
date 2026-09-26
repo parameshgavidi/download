@@ -30,7 +30,7 @@ const defaultSettings: Settings = {
   displayName: "Logged in",
   defaultDownloadPath: "",
   cookiesPath: "",
-  cookiesBrowser: "chrome",
+  cookiesBrowser: "",
   exportQuality: "1080p",
   defaultAspect: "9:16",
 };

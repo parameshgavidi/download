@@ -35,10 +35,10 @@ export function ensureYtDlp() {
 
 export function youtubeBotMessage(raw = "") {
   if (/cookie database|could not copy|failed to decrypt/i.test(raw)) {
-    return "Chrome is still locking cookies (background chrome.exe is enough). In Settings click “Stop Chrome and copy cookies”, or export cookies.txt with the Get cookies.txt LOCALLY extension. That file is the most reliable way.";
+    return "Chrome cookie copy failed, so the app will download without Chrome. If this still appears, set Use logged-in browser to None in Settings and try again.";
   }
-  if (!/sign in to confirm|not a bot|cookies-from-browser|--cookies/i.test(raw)) return "";
-  return "YouTube blocked this request (bot check). Best fix: export cookies.txt from Chrome (Get cookies.txt LOCALLY) and paste the file path in Settings. Or click “Stop Chrome and copy cookies”.";
+  if (!/sign in to confirm|not a bot/i.test(raw)) return "";
+  return "YouTube asked for a login on this video. Public clips usually work without Chrome. If this one does not, export cookies.txt and paste the file path in Settings.";
 }
 
 export function missingYtDlpMessage(raw = "") {
@@ -251,8 +251,7 @@ export function browserCookieSource(browser) {
     return `${browser}:${copiedProfile.path}`;
   }
   const copied = copyBrowserProfile(browser);
-  if (copied) return `${browser}:${copied}`;
-  return browser;
+  return copied ? `${browser}:${copied}` : "";
 }
 
 export function readCookieOptions(body = {}) {
@@ -267,8 +266,16 @@ export function ytDlpArgs(extra, cookies) {
   const args = [...cached.prefix, "--no-warnings"];
   const ffmpeg = resolveFfmpeg();
   if (ffmpeg) args.push("--ffmpeg-location", ffmpeg);
-  if (auth.file && existsSync(auth.file)) args.push("--cookies", auth.file);
-  else if (auth.browser && BROWSERS.has(auth.browser)) args.push("--cookies-from-browser", browserCookieSource(auth.browser));
+  const alreadyHasClient = extra.some((item) => String(item).includes("player_client") || String(item).includes("extractor-args"));
+  if (!alreadyHasClient) {
+    args.push("--extractor-args", "youtube:player_client=android,ios,tv,web");
+  }
+  if (auth.file && existsSync(auth.file)) {
+    args.push("--cookies", auth.file);
+  } else if (auth.browser && BROWSERS.has(auth.browser)) {
+    const source = browserCookieSource(auth.browser);
+    if (source) args.push("--cookies-from-browser", source);
+  }
   args.push(...extra);
   return args;
 }
