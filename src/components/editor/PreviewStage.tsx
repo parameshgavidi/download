@@ -84,6 +84,7 @@ function OverlayLayer({ clip, time }: { clip: Clip; time: number }) {
             WebkitTextStroke: `2px ${clip.stroke}`,
             paintOrder: "stroke fill",
             whiteSpace: "pre-wrap",
+            overflowWrap: "break-word",
             maxWidth: "80%",
           }}
         >

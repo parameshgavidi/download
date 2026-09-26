@@ -24,6 +24,14 @@ export default function SettingsPage() {
             />
           </div>
           <div className="field">
+            <label>YouTube cookies.txt (optional)</label>
+            <input
+              value={settings.cookiesPath}
+              placeholder="/path/to/cookies.txt for networks that require a YouTube login"
+              onChange={(e) => updateSettings({ cookiesPath: e.target.value })}
+            />
+          </div>
+          <div className="field">
             <label>Default download folder</label>
             <input
               value={settings.defaultDownloadPath}
@@ -31,7 +39,7 @@ export default function SettingsPage() {
               onChange={(e) => updateSettings({ defaultDownloadPath: e.target.value })}
             />
           </div>
-          <div className="row">
+          <div className="row grow">
             <div className="field">
               <label>Export quality</label>
               <select

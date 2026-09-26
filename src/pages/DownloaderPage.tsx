@@ -85,7 +85,7 @@ export default function DownloaderPage() {
       const res = await fetch("/api/youtube/info", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url }),
+        body: JSON.stringify({ url, cookies: settings.cookiesPath }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
@@ -105,7 +105,7 @@ export default function DownloaderPage() {
       const res = await fetch("/api/youtube/download", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url, formatId, path }),
+        body: JSON.stringify({ url, formatId, path, cookies: settings.cookiesPath }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
@@ -145,7 +145,7 @@ export default function DownloaderPage() {
         <div className="panel">
           <div className="field">
             <label>Download link</label>
-            <div className="row">
+            <div className="row grow">
               <input
                 value={url}
                 placeholder="https://www.youtube.com/watch?v=..."
@@ -206,7 +206,7 @@ export default function DownloaderPage() {
 
           <div className="field">
             <label>Download path</label>
-            <div className="row">
+            <div className="row grow">
               <input value={path} onChange={(e) => setPath(e.target.value)} placeholder="/workspace/downloads" />
               <button className="ghost" style={{ flex: "0 0 auto" }} onClick={() => { setPickerOpen(true); void loadPath(path); }}>
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
@@ -261,7 +261,7 @@ export default function DownloaderPage() {
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <h3>Select a folder</h3>
             <p className="sub">{pathInfo.current}</p>
-            <div className="row" style={{ margin: "12px 0" }}>
+            <div className="actions" style={{ justifyContent: "flex-start", margin: "12px 0" }}>
               <button className="ghost" onClick={() => void loadPath(pathInfo.parent)}>Up</button>
               <button className="ghost" onClick={() => void loadPath(pathInfo.home)}>Home</button>
               <button className="ghost" onClick={() => void loadPath(pathInfo.defaultPath)}>App downloads</button>
@@ -272,7 +272,7 @@ export default function DownloaderPage() {
                 <span className="sub">Folder</span>
               </button>
             ))}
-            <div className="row" style={{ marginTop: 16 }}>
+            <div className="actions">
               <button className="ghost" onClick={() => setPickerOpen(false)}>Cancel</button>
               <button className="primary" onClick={() => setPickerOpen(false)}>Use this path</button>
             </div>

@@ -39,7 +39,7 @@ function defaultClip(partial: Partial<Clip> & Pick<Clip, "type" | "track" | "nam
     fadeOut: 0,
     text: "Text",
     fontFamily: "Inter, system-ui, sans-serif",
-    fontSize: 56,
+    fontSize: 42,
     color: "#ffffff",
     stroke: "#000000",
     align: "center",
@@ -135,8 +135,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     if (!list.length || !get().project) return;
     const history = pushHistory(get());
     const project = clone(get().project!);
-    const end = projectDuration(project.clips);
-    let cursor = end;
+    let cursor = get().playhead;
 
     for (const file of list) {
       const info = await inspectFile(file);
@@ -176,7 +175,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       type: "text",
       track: "text",
       name: "Text",
-      text: "PgVideoEditor",
+      text: "Text",
       duration: 3,
       start: get().playhead,
     });

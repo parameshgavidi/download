@@ -8,30 +8,33 @@ export default function Inspector() {
   const setAspect = useEditorStore((s) => s.setAspect);
   const clip = project?.clips.find((c) => c.id === selectedId);
 
+  const canvasSelect = project && (
+    <div className="prop">
+      <label>Canvas</label>
+      <select value={project.aspect} onChange={(e) => setAspect(e.target.value as typeof project.aspect)}>
+        <option value="9:16">9:16 Vertical</option>
+        <option value="16:9">16:9 Landscape</option>
+        <option value="1:1">1:1 Square</option>
+        <option value="4:5">4:5 Portrait</option>
+      </select>
+    </div>
+  );
+
   if (!clip) {
     return (
       <aside className="inspector">
+        {canvasSelect}
         <div className="inspector-empty">
           <LayoutGrid size={36} />
           <div>Select to Edit</div>
         </div>
-        {project && (
-          <div className="prop" style={{ marginTop: 24 }}>
-            <label>Canvas</label>
-            <select value={project.aspect} onChange={(e) => setAspect(e.target.value as typeof project.aspect)}>
-              <option value="9:16">9:16 Vertical</option>
-              <option value="16:9">16:9 Landscape</option>
-              <option value="1:1">1:1 Square</option>
-              <option value="4:5">4:5 Portrait</option>
-            </select>
-          </div>
-        )}
       </aside>
     );
   }
 
   return (
     <aside className="inspector">
+      {canvasSelect}
       <h3 style={{ marginBottom: 16 }}>{clip.name}</h3>
       {(clip.type === "text") && (
         <>

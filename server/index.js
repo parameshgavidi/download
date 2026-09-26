@@ -25,13 +25,16 @@ app.use(cors());
 app.use(express.json({ limit: "2mb" }));
 app.use("/downloads", express.static(DEFAULT_DOWNLOADS));
 
-function ytDlpArgs(extra) {
-  return ["-m", "yt_dlp", "--no-warnings", "--no-playlist", ...extra];
+function ytDlpArgs(extra, cookies) {
+  const args = ["-m", "yt_dlp", "--no-warnings", "--no-playlist"];
+  if (cookies && existsSync(cookies)) args.push("--cookies", cookies);
+  args.push(...extra);
+  return args;
 }
 
-function runYtDlp(args, { cwd } = {}) {
+function runYtDlp(args, { cwd, cookies } = {}) {
   return new Promise((resolvePromise, reject) => {
-    const child = spawn("python3", ytDlpArgs(args), {
+    const child = spawn("python3", ytDlpArgs(args, cookies), {
       cwd,
       env: { ...process.env, PYTHONUNBUFFERED: "1" },
     });
@@ -162,7 +165,8 @@ app.post("/api/youtube/info", async (req, res) => {
   if (!url) return res.status(400).json({ error: "Paste a YouTube link first." });
 
   try {
-    const { stdout } = await runYtDlp(["-J", "--skip-download", url]);
+    const cookies = String(req.body?.cookies || "").trim();
+    const { stdout } = await runYtDlp(["-J", "--skip-download", url], { cookies });
     const info = JSON.parse(stdout);
     const { presets, formats } = pickFormats(info);
     res.json({
@@ -177,10 +181,12 @@ app.post("/api/youtube/info", async (req, res) => {
       formats,
     });
   } catch (error) {
+    const raw = error.message.replace(/\n/g, " ");
+    const bot = /sign in to confirm/i.test(raw);
     res.status(400).json({
-      error:
-        error.message.replace(/\n/g, " ").slice(0, 400) ||
-        "Could not read this YouTube link. Check the URL and try again.",
+      error: bot
+        ? "YouTube asked this network to sign in. On your machine, export cookies.txt from a logged-in browser, set the cookies path in Settings, and try again."
+        : raw.slice(0, 400) || "Could not read this YouTube link. Check the URL and try again.",
     });
   }
 });
@@ -188,6 +194,7 @@ app.post("/api/youtube/info", async (req, res) => {
 app.post("/api/youtube/download", async (req, res) => {
   const url = String(req.body?.url || "").trim();
   const formatId = String(req.body?.formatId || "bv*+ba/b");
+  const cookies = String(req.body?.cookies || "").trim();
   const outputDir = safeJoin(DEFAULT_DOWNLOADS, req.body?.path || DEFAULT_DOWNLOADS);
   if (!url) return res.status(400).json({ error: "Paste a YouTube link first." });
 
@@ -222,7 +229,7 @@ app.post("/api/youtube/download", async (req, res) => {
     url,
   ];
 
-  const child = spawn("python3", ytDlpArgs(args), {
+  const child = spawn("python3", ytDlpArgs(args, cookies), {
     env: { ...process.env, PYTHONUNBUFFERED: "1" },
   });
 
@@ -296,7 +303,7 @@ app.get("/api/downloads", (_req, res) => {
     .map((name) => {
       const full = join(DEFAULT_DOWNLOADS, name);
       const stat = statSync(full);
-      if (!stat.isFile()) return null;
+      if (!stat.isFile() || name.startsWith(".")) return null;
       return {
         name,
         path: full,

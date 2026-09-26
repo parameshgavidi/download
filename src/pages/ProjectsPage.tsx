@@ -57,7 +57,7 @@ export default function ProjectsPage() {
                 <div className="card-meta">
                   <div className="card-title">{formatDate(project.updatedAt)}</div>
                   <div>
-                    {project.clips.length} clips · Updated {formatRelative(project.updatedAt)}
+                    {project.clips.length} {project.clips.length === 1 ? "clip" : "clips"} · Updated {formatRelative(project.updatedAt)}
                   </div>
                 </div>
               </Link>

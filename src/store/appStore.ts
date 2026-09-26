@@ -9,6 +9,7 @@ const MAX_PROJECTS = 100;
 export interface Settings {
   displayName: string;
   defaultDownloadPath: string;
+  cookiesPath: string;
   exportQuality: "720p" | "1080p" | "4k";
   defaultAspect: AspectRatio;
 }
@@ -27,6 +28,7 @@ interface AppState {
 const defaultSettings: Settings = {
   displayName: "Logged in",
   defaultDownloadPath: "",
+  cookiesPath: "",
   exportQuality: "1080p",
   defaultAspect: "9:16",
 };
