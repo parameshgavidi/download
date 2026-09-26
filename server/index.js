@@ -1,6 +1,5 @@
 import express from "express";
 import cors from "cors";
-import { spawn } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -12,6 +11,8 @@ import { join, resolve, basename, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import os from "node:os";
 import { randomUUID } from "node:crypto";
+import { runYtDlp, spawnYtDlp, missingYtDlpMessage } from "./ytdlp.js";
+import { registerAdvanceRoutes } from "./advance.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, "..");
@@ -25,34 +26,6 @@ app.use(cors());
 app.use(express.json({ limit: "2mb" }));
 app.use("/downloads", express.static(DEFAULT_DOWNLOADS));
 
-function ytDlpArgs(extra, cookies) {
-  const args = ["-m", "yt_dlp", "--no-warnings", "--no-playlist"];
-  if (cookies && existsSync(cookies)) args.push("--cookies", cookies);
-  args.push(...extra);
-  return args;
-}
-
-function runYtDlp(args, { cwd, cookies } = {}) {
-  return new Promise((resolvePromise, reject) => {
-    const child = spawn("python3", ytDlpArgs(args, cookies), {
-      cwd,
-      env: { ...process.env, PYTHONUNBUFFERED: "1" },
-    });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk.toString();
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk.toString();
-    });
-    child.on("error", reject);
-    child.on("close", (code) => {
-      if (code === 0) resolvePromise({ stdout, stderr });
-      else reject(new Error(stderr.trim() || `yt-dlp exited with code ${code}`));
-    });
-  });
-}
 
 function parseHeight(format) {
   return format.height || format.resolution?.match(/(\d+)p?$/)?.[1] || 0;
@@ -166,7 +139,7 @@ app.post("/api/youtube/info", async (req, res) => {
 
   try {
     const cookies = String(req.body?.cookies || "").trim();
-    const { stdout } = await runYtDlp(["-J", "--skip-download", url], { cookies });
+    const { stdout } = await runYtDlp(["-J", "--skip-download", "--no-playlist", url], { cookies });
     const info = JSON.parse(stdout);
     const { presets, formats } = pickFormats(info);
     res.json({
@@ -186,7 +159,7 @@ app.post("/api/youtube/info", async (req, res) => {
     res.status(400).json({
       error: bot
         ? "YouTube asked this network to sign in. On your machine, export cookies.txt from a logged-in browser, set the cookies path in Settings, and try again."
-        : raw.slice(0, 400) || "Could not read this YouTube link. Check the URL and try again.",
+        : missingYtDlpMessage(raw).slice(0, 400) || "Could not read this YouTube link. Check the URL and try again.",
     });
   }
 });
@@ -229,9 +202,7 @@ app.post("/api/youtube/download", async (req, res) => {
     url,
   ];
 
-  const child = spawn("python3", ytDlpArgs(args, cookies), {
-    env: { ...process.env, PYTHONUNBUFFERED: "1" },
-  });
+  const child = spawnYtDlp(["--no-playlist", ...args], cookies);
 
   job.status = "downloading";
   child.stdout.on("data", (chunk) => {
@@ -298,6 +269,8 @@ app.get("/api/files", (req, res) => {
   createReadStream(filePath).pipe(res);
 });
 
+registerAdvanceRoutes(app, { downloadsRoot: DEFAULT_DOWNLOADS, jobs });
+
 app.get("/api/downloads", (_req, res) => {
   const files = readdirSync(DEFAULT_DOWNLOADS)
     .map((name) => {
@@ -318,6 +291,14 @@ app.get("/api/downloads", (_req, res) => {
 });
 
 const port = Number(process.env.PORT || 8787);
-app.listen(port, "0.0.0.0", () => {
+const server = app.listen(port, "127.0.0.1", () => {
   console.log(`PgVideoEditor API on http://127.0.0.1:${port}`);
+});
+server.on("error", (error) => {
+  if (error.code === "EADDRINUSE") {
+    console.error(`Port ${port} is already in use. Close other Node processes and try again.`);
+  } else {
+    console.error(error);
+  }
+  process.exit(1);
 });
