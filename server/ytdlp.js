@@ -53,6 +53,29 @@ export function spawnYtDlp(extra, cookies) {
   });
 }
 
+export function ffmpegAvailable() {
+  try {
+    const result = spawnSync("ffmpeg", ["-version"], { encoding: "utf8", windowsHide: true });
+    return result.status === 0;
+  } catch {
+    return false;
+  }
+}
+
+export function mergeDownloadArgs(outputTemplate) {
+  return [
+    "-f",
+    "bestvideo+bestaudio/best",
+    "--merge-output-format",
+    "mp4",
+    "--remux-video",
+    "mp4",
+    "--newline",
+    "-o",
+    outputTemplate,
+  ];
+}
+
 export function runYtDlp(args, { cookies } = {}) {
   return new Promise((resolvePromise, reject) => {
     const child = spawnYtDlp(args, cookies);

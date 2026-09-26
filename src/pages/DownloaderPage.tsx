@@ -139,7 +139,7 @@ export default function DownloaderPage() {
         <div className="page-head">
           <div>
             <h1>YouTube Downloader</h1>
-            <p className="sub">Download high quality YouTube video at the resolution you choose.</p>
+            <p className="sub">Download high quality YouTube video as one merged MP4 (video + audio together).</p>
           </div>
         </div>
         <div className="panel">

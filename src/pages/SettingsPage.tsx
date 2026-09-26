@@ -23,6 +23,9 @@ export default function SettingsPage() {
               onChange={(e) => updateSettings({ displayName: e.target.value })}
             />
           </div>
+          <p className="sub" style={{ marginBottom: 16 }}>
+            Install FFmpeg so downloads become one MP4 instead of separate video + audio files. In PowerShell: winget install Gyan.FFmpeg
+          </p>
           <div className="field">
             <label>YouTube cookies.txt (optional)</label>
             <input

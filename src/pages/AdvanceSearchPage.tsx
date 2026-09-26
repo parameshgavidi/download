@@ -15,6 +15,16 @@ interface ResearchVideo {
   channel: string;
   thumbnail: string;
   url: string;
+  youtubeUrl?: string;
+}
+
+interface Candidate {
+  query: string;
+  ok: boolean;
+  duplicate: boolean;
+  reason: string;
+  confidence?: number;
+  video: ResearchVideo | null;
 }
 
 interface PackVideo extends ResearchVideo {
@@ -58,6 +68,10 @@ function parseKeywords(file: File) {
   });
 }
 
+function youtubeHref(video?: ResearchVideo | null) {
+  return video?.youtubeUrl || video?.url || "";
+}
+
 export default function AdvanceSearchPage() {
   const navigate = useNavigate();
   const settings = useAppStore((s) => s.settings);
@@ -70,6 +84,8 @@ export default function AdvanceSearchPage() {
   const [top, setTop] = useState<ResearchVideo | null>(null);
   const [pack, setPack] = useState<Pack | null>(null);
   const [packs, setPacks] = useState<Pack[]>([]);
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [ffmpegOk, setFfmpegOk] = useState<boolean | null>(null);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [job, setJob] = useState<JobStatus | null>(null);
@@ -78,11 +94,37 @@ export default function AdvanceSearchPage() {
   useEffect(() => {
     void refreshKeywords();
     void refreshPacks();
+    void fetch("/api/health")
+      .then((res) => res.json())
+      .then((data) => setFfmpegOk(Boolean(data.ffmpeg)))
+      .catch(() => setFfmpegOk(null));
   }, []);
+
+  useEffect(() => {
+    const current = packs.find((item) => item.keyword === keyword);
+    if (!current) return;
+    setPack(current);
+    if (related.length === 0 && current.related?.length) {
+      setRelated(current.related);
+      setSelected(current.related);
+    }
+  }, [packs, keyword, related.length]);
 
   const selectedPack = useMemo(
     () => packs.find((item) => item.keyword === keyword) || pack,
     [packs, keyword, pack],
+  );
+
+  const candidateByQuery = useMemo(
+    () => new Map(candidates.map((item) => [item.query, item])),
+    [candidates],
+  );
+
+  const downloadable = useMemo(
+    () => selected
+      .map((query) => candidateByQuery.get(query))
+      .filter((item): item is Candidate => Boolean(item?.ok && item.video)),
+    [selected, candidateByQuery],
   );
 
   async function refreshKeywords() {
@@ -138,6 +180,8 @@ export default function AdvanceSearchPage() {
       setTop(data.top);
       setRelated(data.related || []);
       setSelected(data.related || []);
+      setCandidates([]);
+      if (typeof data.ffmpeg === "boolean") setFfmpegOk(data.ffmpeg);
       await refreshPacks();
     } catch (err) {
       setError(err instanceof Error ? err.message : "YouTube research failed.");
@@ -147,25 +191,79 @@ export default function AdvanceSearchPage() {
   }
 
   function togglePhrase(phrase: string) {
+    const candidate = candidateByQuery.get(phrase);
+    if (candidate && !candidate.ok) return;
     setSelected((current) =>
       current.includes(phrase) ? current.filter((item) => item !== phrase) : [...current, phrase],
     );
+  }
+
+  async function resolveLinks(queries = selected) {
+    if (!keyword || queries.length === 0) return [];
+    setError("");
+    setBusy("Finding unique commercial YouTube links…");
+    try {
+      const res = await fetch("/api/advance/resolve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          keyword,
+          queries,
+          cookies: settings.cookiesPath,
+          sourceVideoId: top?.id,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      const items = (data.items || []) as Candidate[];
+      setCandidates(items);
+      setFfmpegOk(Boolean(data.ffmpeg));
+      setSelected(items.filter((item) => item.ok).map((item) => item.query));
+      return items;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not resolve YouTube links.");
+      return [];
+    } finally {
+      setBusy("");
+    }
   }
 
   async function downloadSelected() {
     if (!keyword || selected.length === 0) return;
     setError("");
     try {
-      for (let index = 0; index < selected.length; index += 1) {
-        const query = selected[index];
-        setBusy(`Downloading ${index + 1} of ${selected.length}: ${query}`);
+      let items = candidates.filter((item) => selected.includes(item.query));
+      const missing = selected.some((query) => !candidateByQuery.get(query)?.video);
+      if (!items.length || missing) {
+        items = await resolveLinks(selected);
+      }
+      const ready = items.filter((item) => item.ok && item.video);
+      if (!ready.length) {
+        throw new Error("No unique commercial YouTube links to download. Find links first and skip duplicates or non-commercials.");
+      }
+      for (let index = 0; index < ready.length; index += 1) {
+        const item = ready[index];
+        const video = item.video!;
+        setBusy(`Downloading ${index + 1} of ${ready.length}: ${item.query}`);
         const res = await fetch("/api/advance/download-top", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ keyword, query, cookies: settings.cookiesPath, sourceVideoId: top?.id }),
+          body: JSON.stringify({
+            keyword,
+            query: item.query,
+            cookies: settings.cookiesPath,
+            sourceVideoId: top?.id,
+            url: youtubeHref(video),
+            videoId: video.id,
+            title: video.title,
+            views: video.views,
+            duration: video.duration,
+            channel: video.channel,
+            thumbnail: video.thumbnail,
+          }),
         });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error || `Failed on “${query}”`);
+        if (!res.ok) throw new Error(data.error || `Failed on “${item.query}”`);
         if (data.already) {
           setPack(data.pack);
         } else if (data.jobId) {
@@ -206,23 +304,38 @@ export default function AdvanceSearchPage() {
     setTimeout(() => setCopied(""), 1500);
   }
 
+  function selectResolved() {
+    if (candidates.length) {
+      setSelected(candidates.filter((item) => item.ok).map((item) => item.query));
+      return;
+    }
+    setSelected(related);
+  }
+
   return (
     <div className="app-shell">
       <Sidebar />
-      <main className="page downloader">
+      <main className="page downloader advance">
         <div className="page-head">
           <div>
             <h1>Advance Search</h1>
-            <p className="sub">Upload keywords, research YouTube, download top-viewed clips, then merge in view order.</p>
+            <p className="sub">Upload keywords, research YouTube, download unique commercial spots as one MP4, then merge in view order.</p>
           </div>
         </div>
 
         <div className="steps">
           <span className={sheetName ? "on" : ""}>1. Excel</span>
           <span className={top ? "on" : ""}>2. Research</span>
-          <span className={selectedPack?.videos.length ? "on" : ""}>3. Download</span>
-          <span>4. Merge pack</span>
+          <span className={candidates.some((item) => item.ok) ? "on" : ""}>3. Unique links</span>
+          <span className={selectedPack?.videos.length ? "on" : ""}>4. Download</span>
+          <span>5. Merge pack</span>
         </div>
+
+        {ffmpegOk === false && (
+          <p className="error">
+            FFmpeg is missing, so downloads would stay as separate video + audio files. In PowerShell run: winget install Gyan.FFmpeg  then restart the app.
+          </p>
+        )}
 
         <div className="panel">
           <h3>1. Upload keyword Excel</h3>
@@ -261,6 +374,11 @@ export default function AdvanceSearchPage() {
               <div>
                 <h2>{top.title}</h2>
                 <p className="sub">{top.channel} · {top.views.toLocaleString()} views · {formatClock(top.duration)}</p>
+                {top.url && (
+                  <p className="sub">
+                    Source: <a className="yt-link" href={top.url} target="_blank" rel="noreferrer">{top.url}</a>
+                  </p>
+                )}
                 <p className="sub">{top.description.slice(0, 280) || "No description"}</p>
               </div>
             </div>
@@ -268,29 +386,70 @@ export default function AdvanceSearchPage() {
         </div>
 
         <div className="panel" style={{ marginTop: 18 }}>
-          <h3>3. Choose phrases and download each top viewed video</h3>
-          <p className="sub">Check the individual commercials. We skip the source countdown and YouTube reuploads, then save only the commercial spot into the keyword folder.</p>
+          <h3>3. Unique commercial YouTube links</h3>
+          <p className="sub">
+            Check the individual commercials, then find a unique YouTube page for each one. Duplicate links are blocked.
+            We only keep clips that look like a standalone brand commercial (about 8–210 seconds, not a compilation, reaction, or reupload).
+            This is a heuristic, not a copyright or monetization check.
+          </p>
           <div className="actions" style={{ justifyContent: "flex-start", marginTop: 10 }}>
-            <button className="ghost" type="button" disabled={!related.length} onClick={() => setSelected(related)}>Select all</button>
+            <button className="ghost" type="button" disabled={!related.length} onClick={selectResolved}>Select all</button>
             <button className="ghost" type="button" disabled={!selected.length} onClick={() => setSelected([])}>Clear</button>
-            <span className="sub">{selected.length} selected</span>
+            <button className="ghost" type="button" disabled={!selected.length || Boolean(busy)} onClick={() => void resolveLinks()}>
+              Find unique commercial links
+            </button>
+            <span className="sub">{selected.length} selected · {downloadable.length} unique commercials</span>
           </div>
           <div className="check-list">
             {related.length === 0 && <div className="sub">Search YouTube first to fill this list from the top video.</div>}
-            {related.map((item) => (
-              <label key={item} className="check-item">
-                <input type="checkbox" checked={selected.includes(item)} onChange={() => togglePhrase(item)} />
-                <span>{item}</span>
-              </label>
-            ))}
+            {related.map((item) => {
+              const candidate = candidateByQuery.get(item);
+              const video = candidate?.video;
+              const checked = selected.includes(item);
+              const blocked = Boolean(candidate && !candidate.ok);
+              return (
+                <label key={item} className={`check-item ${blocked ? "blocked" : ""}`}>
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    disabled={blocked}
+                    onChange={() => togglePhrase(item)}
+                  />
+                  <span className="check-copy">
+                    <strong>{item}</strong>
+                    {video ? (
+                      <>
+                        <span className="sub">{video.title} · {video.views.toLocaleString()} views · {formatClock(video.duration)}</span>
+                        <a className="yt-link" href={youtubeHref(video)} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>
+                          {youtubeHref(video)}
+                        </a>
+                      </>
+                    ) : (
+                      <span className="sub">Find unique commercial links to show the YouTube URL.</span>
+                    )}
+                    {candidate && (
+                      <span className={`badge ${candidate.ok ? "ok" : candidate.duplicate ? "dup" : "no"}`}>
+                        {candidate.ok
+                          ? `Commercial · ${candidate.confidence || 0}%`
+                          : candidate.duplicate
+                            ? "Duplicate link"
+                            : "Not a commercial"}
+                        {" · "}
+                        {candidate.reason}
+                      </span>
+                    )}
+                  </span>
+                </label>
+              );
+            })}
           </div>
-          <button className="primary" onClick={() => void downloadSelected()} disabled={!keyword || selected.length === 0 || Boolean(busy)}>
-            Download selected ({selected.length})
+          <button className="primary" onClick={() => void downloadSelected()} disabled={!keyword || selected.length === 0 || Boolean(busy) || ffmpegOk === false}>
+            Download selected ({downloadable.length || selected.length})
           </button>
           {job && (
             <div style={{ marginTop: 14 }}>
               <div className="progress"><span style={{ width: `${job.progress}%` }} /></div>
-              <div className="sub">{job.progress}%</div>
+              <div className="sub">{job.progress}% · one merged MP4 (video + audio)</div>
             </div>
           )}
         </div>
@@ -306,6 +465,7 @@ export default function AdvanceSearchPage() {
                   <th>Rank</th>
                   <th>Views</th>
                   <th>Title</th>
+                  <th>YouTube</th>
                   <th>Search</th>
                 </tr>
               </thead>
@@ -315,6 +475,13 @@ export default function AdvanceSearchPage() {
                     <td>{video.rank}</td>
                     <td>{video.viewsLabel}</td>
                     <td>{video.title}</td>
+                    <td>
+                      {youtubeHref(video) ? (
+                        <a className="yt-link" href={youtubeHref(video)} target="_blank" rel="noreferrer">
+                          {youtubeHref(video)}
+                        </a>
+                      ) : "—"}
+                    </td>
                     <td>{video.query || "—"}</td>
                   </tr>
                 ))}
@@ -355,7 +522,7 @@ export default function AdvanceSearchPage() {
           <div className="downloads-list">
             {packs.length === 0 && <div className="sub">Download a top viewed video to create a keyword folder.</div>}
             {packs.map((item) => (
-              <button key={item.keyword} className="download-row" style={{ width: "100%", textAlign: "left" }} onClick={() => { setKeyword(item.keyword); setPack(item); }}>
+              <button key={item.keyword} className="download-row" style={{ width: "100%", textAlign: "left" }} onClick={() => { setKeyword(item.keyword); setPack(item); setRelated(item.related || []); setSelected(item.related || []); setCandidates([]); }}>
                 <span style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
                   <FolderOpen size={16} /> {item.keyword}
                 </span>

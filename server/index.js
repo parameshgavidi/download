@@ -6,12 +6,13 @@ import {
   readdirSync,
   statSync,
   createReadStream,
+  unlinkSync,
 } from "node:fs";
 import { join, resolve, basename, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import os from "node:os";
 import { randomUUID } from "node:crypto";
-import { runYtDlp, spawnYtDlp, missingYtDlpMessage } from "./ytdlp.js";
+import { runYtDlp, spawnYtDlp, missingYtDlpMessage, ffmpegAvailable } from "./ytdlp.js";
 import { registerAdvanceRoutes } from "./advance.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -91,8 +92,25 @@ function safeJoin(base, requested) {
   return target;
 }
 
+function needsMerge(formatId) {
+  return String(formatId).includes("+") || formatId === "best" || formatId === "bv*+ba/b";
+}
+
+function cleanupSplitFiles(dir) {
+  if (!existsSync(dir)) return;
+  for (const name of readdirSync(dir)) {
+    if (/\.f\d+\./i.test(name)) {
+      try {
+        unlinkSync(join(dir, name));
+      } catch {
+        // leftover fragment from a split stream
+      }
+    }
+  }
+}
+
 app.get("/api/health", (_req, res) => {
-  res.json({ ok: true, app: "PgVideoEditor" });
+  res.json({ ok: true, app: "PgVideoEditor", ffmpeg: ffmpegAvailable() });
 });
 
 app.get("/api/paths", (req, res) => {
@@ -177,6 +195,12 @@ app.post("/api/youtube/download", async (req, res) => {
     return res.status(400).json({ error: `Cannot write to that folder: ${error.message}` });
   }
 
+  if (needsMerge(formatId) && !ffmpegAvailable()) {
+    return res.status(400).json({
+      error: "FFmpeg is required to join video + audio into one MP4. In PowerShell run: winget install Gyan.FFmpeg  then restart the app.",
+    });
+  }
+
   const jobId = randomUUID();
   const job = {
     id: jobId,
@@ -195,6 +219,8 @@ app.post("/api/youtube/download", async (req, res) => {
     "-f",
     formatId,
     "--merge-output-format",
+    "mp4",
+    "--remux-video",
     "mp4",
     "--newline",
     "-o",
@@ -230,8 +256,10 @@ app.post("/api/youtube/download", async (req, res) => {
     if (code === 0) {
       job.status = "done";
       job.progress = 100;
+      cleanupSplitFiles(outputDir);
       if (!job.filename) {
         const files = readdirSync(outputDir)
+          .filter((name) => !name.startsWith(".") && !/\.f\d+\./i.test(name))
           .map((name) => ({ name, mtime: statSync(join(outputDir, name)).mtimeMs }))
           .sort((a, b) => b.mtime - a.mtime);
         if (files[0]) job.filename = join(outputDir, files[0].name);
