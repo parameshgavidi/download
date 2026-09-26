@@ -266,6 +266,7 @@ export default function AdvanceSearchPage() {
     if (!keyword || queries.length === 0) return;
     setError("");
     let saved = 0;
+    let blocked = false;
     const problems: string[] = [];
     try {
       for (let index = 0; index < queries.length; index += 1) {
@@ -296,7 +297,13 @@ export default function AdvanceSearchPage() {
           });
           const data = await res.json();
           if (!res.ok) {
-            problems.push(`${query}: ${data.error || "download failed"}`);
+            const message = data.error || "download failed";
+            if (/bot check|cookies\.txt|sign in to confirm/i.test(message)) {
+              setError(message);
+              blocked = true;
+              break;
+            }
+            problems.push(`${query}: ${message}`);
             continue;
           }
           if (data.already) {
@@ -310,10 +317,16 @@ export default function AdvanceSearchPage() {
           if (packRes.ok) setPack(await packRes.json());
           await refreshPacks();
         } catch (itemError) {
-          problems.push(`${query}: ${itemError instanceof Error ? itemError.message : "download failed"}`);
+          const message = itemError instanceof Error ? itemError.message : "download failed";
+          if (/bot check|cookies\.txt|sign in to confirm/i.test(message)) {
+            setError(message);
+            blocked = true;
+            break;
+          }
+          problems.push(`${query}: ${message}`);
         }
       }
-      if (problems.length) {
+      if (problems.length && !blocked) {
         setError(problems.join(" · "));
       }
       if (saved) setBusy(`Saved ${saved} of ${queries.length} videos.`);

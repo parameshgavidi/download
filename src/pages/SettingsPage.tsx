@@ -38,12 +38,15 @@ export default function SettingsPage() {
               : "FFmpeg is not visible to this app yet. If WinGet already installed it, close VS Code completely and reopen, then run npm run dev again."}
           </p>
           <div className="field">
-            <label>YouTube cookies.txt (optional)</label>
+            <label>YouTube cookies.txt</label>
             <input
               value={settings.cookiesPath}
-              placeholder="/path/to/cookies.txt for networks that require a YouTube login"
+              placeholder="C:\Users\You\Downloads\cookies.txt"
               onChange={(e) => updateSettings({ cookiesPath: e.target.value })}
             />
+            <p className="sub">
+              YouTube often blocks downloads until this is set. In Chrome, install “Get cookies.txt LOCALLY”, open youtube.com while logged in, export the file, then paste that full path here.
+            </p>
           </div>
           <div className="field">
             <label>Default download folder</label>
