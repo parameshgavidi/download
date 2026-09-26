@@ -315,7 +315,7 @@ export default function AdvanceSearchPage() {
   return (
     <div className="app-shell">
       <Sidebar />
-      <main className="page downloader">
+      <main className="page downloader advance">
         <div className="page-head">
           <div>
             <h1>Advance Search</h1>
