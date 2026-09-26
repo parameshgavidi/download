@@ -66,7 +66,7 @@ export default function AdvanceSearchPage() {
   const [sheetName, setSheetName] = useState("");
   const [keyword, setKeyword] = useState("");
   const [related, setRelated] = useState<string[]>([]);
-  const [query, setQuery] = useState("");
+  const [selected, setSelected] = useState<string[]>([]);
   const [top, setTop] = useState<ResearchVideo | null>(null);
   const [pack, setPack] = useState<Pack | null>(null);
   const [packs, setPacks] = useState<Pack[]>([]);
@@ -137,7 +137,7 @@ export default function AdvanceSearchPage() {
       if (!res.ok) throw new Error(data.error);
       setTop(data.top);
       setRelated(data.related || []);
-      setQuery(data.related?.[0] || keyword);
+      setSelected(data.related || []);
       await refreshPacks();
     } catch (err) {
       setError(err instanceof Error ? err.message : "YouTube research failed.");
@@ -146,28 +146,35 @@ export default function AdvanceSearchPage() {
     }
   }
 
-  async function downloadTop() {
-    if (!keyword || !query) return;
+  function togglePhrase(phrase: string) {
+    setSelected((current) =>
+      current.includes(phrase) ? current.filter((item) => item !== phrase) : [...current, phrase],
+    );
+  }
+
+  async function downloadSelected() {
+    if (!keyword || selected.length === 0) return;
     setError("");
-    setBusy("Finding and downloading the top viewed video…");
     try {
-      const res = await fetch("/api/advance/download-top", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ keyword, query, cookies: settings.cookiesPath }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      if (data.already) {
-        setPack(data.pack);
+      for (let index = 0; index < selected.length; index += 1) {
+        const query = selected[index];
+        setBusy(`Downloading ${index + 1} of ${selected.length}: ${query}`);
+        const res = await fetch("/api/advance/download-top", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ keyword, query, cookies: settings.cookiesPath }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || `Failed on “${query}”`);
+        if (data.already) {
+          setPack(data.pack);
+        } else if (data.jobId) {
+          await pollJob(data.jobId);
+        }
+        const packRes = await fetch(`/api/advance/packs/${encodeURIComponent(keyword)}`);
+        if (packRes.ok) setPack(await packRes.json());
         await refreshPacks();
-        setBusy("");
-        return;
       }
-      if (data.jobId) await pollJob(data.jobId);
-      const packRes = await fetch(`/api/advance/packs/${encodeURIComponent(keyword)}`);
-      if (packRes.ok) setPack(await packRes.json());
-      await refreshPacks();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Download failed.");
     } finally {
@@ -261,22 +268,25 @@ export default function AdvanceSearchPage() {
         </div>
 
         <div className="panel" style={{ marginTop: 18 }}>
-          <h3>3. Download the top viewed video</h3>
-          <p className="sub">The second dropdown is filled from the top video title and description. We then download the highest-viewed result into the keyword folder.</p>
-          <div className="row grow">
-            <div className="field" style={{ marginBottom: 0 }}>
-              <label>Search phrase from top video</label>
-              <select value={query} onChange={(e) => setQuery(e.target.value)}>
-                <option value="">Select a phrase</option>
-                {related.map((item) => (
-                  <option key={item} value={item}>{item}</option>
-                ))}
-              </select>
-            </div>
-            <button className="primary" style={{ flex: "0 0 auto", alignSelf: "end" }} onClick={() => void downloadTop()} disabled={!keyword || !query || Boolean(busy)}>
-              Download top viewed
-            </button>
+          <h3>3. Choose phrases and download each top viewed video</h3>
+          <p className="sub">Check the ads or phrases you want. Each selected item is searched on YouTube and the highest-viewed video is saved in the keyword folder.</p>
+          <div className="actions" style={{ justifyContent: "flex-start", marginTop: 10 }}>
+            <button className="ghost" type="button" disabled={!related.length} onClick={() => setSelected(related)}>Select all</button>
+            <button className="ghost" type="button" disabled={!selected.length} onClick={() => setSelected([])}>Clear</button>
+            <span className="sub">{selected.length} selected</span>
           </div>
+          <div className="check-list">
+            {related.length === 0 && <div className="sub">Search YouTube first to fill this list from the top video.</div>}
+            {related.map((item) => (
+              <label key={item} className="check-item">
+                <input type="checkbox" checked={selected.includes(item)} onChange={() => togglePhrase(item)} />
+                <span>{item}</span>
+              </label>
+            ))}
+          </div>
+          <button className="primary" onClick={() => void downloadSelected()} disabled={!keyword || selected.length === 0 || Boolean(busy)}>
+            Download selected ({selected.length})
+          </button>
           {job && (
             <div style={{ marginTop: 14 }}>
               <div className="progress"><span style={{ width: `${job.progress}%` }} /></div>
