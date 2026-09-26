@@ -33,7 +33,14 @@ export function ensureYtDlp() {
   return cached;
 }
 
+export function youtubeBotMessage(raw = "") {
+  if (!/sign in to confirm|not a bot|cookies-from-browser|--cookies/i.test(raw)) return "";
+  return "YouTube blocked this request (bot check). Export cookies.txt from a Chrome window that is logged into YouTube, paste the full file path in Settings, then try again. Close other YouTube tabs if it still fails.";
+}
+
 export function missingYtDlpMessage(raw = "") {
+  const bot = youtubeBotMessage(raw);
+  if (bot) return bot;
   if (!/No module named yt_dlp|not recognized|ENOENT|cannot find/i.test(raw) && raw) return raw;
   return process.platform === "win32"
     ? "yt-dlp is not installed. In PowerShell run: python -m pip install -U yt-dlp"

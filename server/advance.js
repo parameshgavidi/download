@@ -458,11 +458,8 @@ export function registerAdvanceRoutes(app, { downloadsRoot, jobs }) {
       });
     } catch (error) {
       const raw = error.message.replace(/\n/g, " ");
-      const bot = /sign in to confirm/i.test(raw);
       res.status(400).json({
-        error: bot
-          ? "YouTube asked this network to sign in. Add cookies.txt in Settings and try again."
-          : missingYtDlpMessage(raw).slice(0, 400),
+        error: missingYtDlpMessage(raw).slice(0, 400),
       });
     }
   });
