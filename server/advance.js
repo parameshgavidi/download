@@ -60,7 +60,6 @@ function extractPhrases(title, description = "") {
     if (skip.test(clean)) return;
     if (!phrases.some((item) => item.toLowerCase() === clean.toLowerCase())) phrases.push(clean);
   };
-  push(title);
   for (const match of description.matchAll(/^\s*\d+[.)]\s+(.+)$/gm)) {
     push(match[1].split("—")[0].split(" - ")[0]);
   }
@@ -99,6 +98,40 @@ async function searchYoutube(query, cookies, limit = 10) {
   return entries.map(normalizeEntry).filter((item) => item.url).sort((a, b) => b.views - a.views);
 }
 
+const COPY_MARKERS = /reupload|re-upload|copied from|from youtube|no copyright intended|full compilation|all ads in one|mirrored upload|youtube copy/i;
+const COMPILATION_MARKERS = /compilation|top\s*\d+|top ten|countdown|every super bowl|famous funny commercials/i;
+
+function isYoutubeCopy(video, sourceId) {
+  if (sourceId && video.id === sourceId) return true;
+  const text = `${video.title} ${video.description || ""}`;
+  if (COPY_MARKERS.test(text)) return true;
+  if (video.duration > 180 && COMPILATION_MARKERS.test(video.title)) return true;
+  return false;
+}
+
+function isCommercialLength(video) {
+  if (!video.duration) return true;
+  return video.duration >= 8 && video.duration <= 210;
+}
+
+function commercialScore(video, query) {
+  let score = Number(video.views) || 0;
+  if (video.duration >= 15 && video.duration <= 90) score *= 1.2;
+  if (/official|commercial|advert|tv ad/i.test(video.title)) score *= 1.12;
+  const words = String(query).toLowerCase().split(/[^a-z0-9]+/).filter((word) => word.length > 2);
+  const title = video.title.toLowerCase();
+  score *= 1 + words.filter((word) => title.includes(word)).length * 0.06;
+  return score;
+}
+
+function pickCommercial(results, { sourceId, query, existingIds }) {
+  return [...results]
+    .filter((video) => video.url && !existingIds.has(video.id))
+    .filter((video) => !isYoutubeCopy(video, sourceId))
+    .filter((video) => isCommercialLength(video))
+    .sort((a, b) => commercialScore(b, query) - commercialScore(a, query))[0];
+}
+
 function loadPack(root, keyword) {
   const dir = packDir(root, keyword);
   const packPath = join(dir, "pack.json");
@@ -123,29 +156,44 @@ function emptyMetadata(keyword) {
   };
 }
 
+function uniqueWords(values) {
+  const seen = new Set();
+  const words = [];
+  for (const value of values) {
+    for (const word of String(value).toLowerCase().split(/[^a-z0-9]+/)) {
+      if (word.length < 3 || seen.has(word)) continue;
+      if (/^(the|and|for|from|with|this|that|official|video)$/.test(word)) continue;
+      seen.add(word);
+      words.push(word);
+    }
+  }
+  return words;
+}
+
 function buildMetadata(keyword, videos, related = []) {
   const ranked = [...videos].sort((a, b) => b.views - a.views);
-  const tags = new Set(
-    [keyword, ...related, "compilation", "top viewed", "youtube compilation"]
-      .flatMap((item) => String(item).split(/[\s,/|]+/))
-      .map((item) => item.toLowerCase())
-      .filter((item) => item.length > 2),
-  );
+  const brands = ranked.map((video) => video.query || video.title.split(/[-|/]/)[0].trim()).filter(Boolean);
+  const year = new Date().getFullYear();
+  const title = `${brands[0] || keyword}: audience-ranked ad recap ${year}`;
   const lineup = ranked
-    .map((video, index) => `${index + 1}. ${video.title} — ${formatViews(video.views)} views`)
+    .map((video, index) => `${index + 1}. ${video.query || video.title} · ${formatViews(video.views)} audience views`)
     .join("\n");
+  const keywords = uniqueWords([keyword, ...brands, ...related, ...ranked.map((video) => video.title)]).slice(0, 18);
+  const tags = uniqueWords(["ad recap", "audience rank", "brand film", ...brands, ...related]).slice(0, 22);
   return {
-    title: `${keyword} | Top ${Math.max(ranked.length, 1)} most viewed`,
+    title,
     description: [
-      `A compilation of the most viewed YouTube videos for “${keyword}”, arranged from highest to lowest views.`,
+      `An independently ordered recap of individual brand spots found for “${keyword}”.`,
+      "Order is not copied from any source countdown. Each clip is ranked by that clip’s own public view count, highest first.",
       "",
-      "Lineup (top viewed first):",
-      lineup || "No videos yet.",
+      "Audience-ranked sequence:",
+      lineup || "No commercials yet.",
       "",
-      "Created with PgVideoEditor Advance Search.",
+      "Title, description, and tags are generated from this new ranking, not copied from another upload.",
+      "Upload only content you have rights to use. Brand commercials may be copyrighted and can affect YouTube monetization.",
     ].join("\n"),
-    keywords: [keyword, ...related].filter(Boolean).slice(0, 20),
-    tags: [...tags].slice(0, 25),
+    keywords,
+    tags,
     thumbnail: ranked[0]?.thumbnail || "",
   };
 }
@@ -314,11 +362,13 @@ export function registerAdvanceRoutes(app, { downloadsRoot, jobs }) {
       const pack = loadPack(downloadsRoot, keyword);
       pack.related = related;
       pack.research = { top, videos, researchedAt: Date.now() };
+      pack.sourceVideoId = top.id;
       savePack(downloadsRoot, pack);
       res.json({
         keyword: pack.keyword,
         top,
-        related: [keyword, ...related.filter((item) => item.toLowerCase() !== keyword.toLowerCase())],
+        sourceVideoId: top.id,
+        related: related.filter((item) => item.toLowerCase() !== keyword.toLowerCase()),
         videos,
       });
     } catch (error) {
@@ -338,13 +388,23 @@ export function registerAdvanceRoutes(app, { downloadsRoot, jobs }) {
     const cookies = String(req.body?.cookies || "").trim();
     if (!keyword || !query) return res.status(400).json({ error: "Select a keyword and a search phrase." });
     try {
-      const results = await searchYoutube(query, cookies, 10);
-      const top = results[0];
-      if (!top) return res.status(404).json({ error: "No top-viewed video found for that search." });
+      const pack = loadPack(downloadsRoot, keyword);
+      const sourceId = req.body?.sourceVideoId || pack.sourceVideoId || pack.research?.top?.id;
+      const existingIds = new Set(pack.videos.map((video) => video.id));
+      let results = await searchYoutube(`${query} official commercial`, cookies, 12);
+      let top = pickCommercial(results, { sourceId, query, existingIds });
+      if (!top) {
+        results = await searchYoutube(query, cookies, 12);
+        top = pickCommercial(results, { sourceId, query, existingIds });
+      }
+      if (!top) {
+        return res.status(404).json({
+          error: `No individual commercial found for “${query}”. Skipped YouTube copies and compilation reuploads.`,
+        });
+      }
       const dir = packDir(downloadsRoot, keyword);
       const videoDir = join(dir, "videos");
       mkdirSync(videoDir, { recursive: true });
-      const pack = loadPack(downloadsRoot, keyword);
       if (pack.videos.some((video) => video.id === top.id)) {
         return res.json({ already: true, pack: publicPack(downloadsRoot, savePack(downloadsRoot, pack)), video: top });
       }
