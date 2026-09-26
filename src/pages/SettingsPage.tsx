@@ -6,6 +6,8 @@ export default function SettingsPage() {
   const settings = useAppStore((s) => s.settings);
   const updateSettings = useAppStore((s) => s.updateSettings);
   const [ffmpeg, setFfmpeg] = useState<{ ok: boolean; path: string } | null>(null);
+  const [cookieNote, setCookieNote] = useState("");
+  const [cookieBusy, setCookieBusy] = useState(false);
 
   useEffect(() => {
     void fetch("/api/health")
@@ -13,6 +15,26 @@ export default function SettingsPage() {
       .then((data) => setFfmpeg({ ok: Boolean(data.ffmpeg), path: data.ffmpegPath || "" }))
       .catch(() => setFfmpeg({ ok: false, path: "" }));
   }, []);
+
+  async function prepareCookies(kill: boolean) {
+    if (!settings.cookiesBrowser) return;
+    setCookieBusy(true);
+    setCookieNote("");
+    try {
+      const res = await fetch("/api/youtube/cookies/prepare", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ browser: settings.cookiesBrowser, kill }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setCookieNote("Copied browser cookies. Go back to Advance Search and download again.");
+    } catch (err) {
+      setCookieNote(err instanceof Error ? err.message : "Could not copy browser cookies.");
+    } finally {
+      setCookieBusy(false);
+    }
+  }
 
   return (
     <div className="app-shell">
@@ -38,6 +60,12 @@ export default function SettingsPage() {
               : "FFmpeg is not visible to this app yet. If WinGet already installed it, close VS Code completely and reopen, then run npm run dev again."}
           </p>
           <div className="field">
+            <label>Best way to download YouTube videos</label>
+            <p className="sub">
+              Export a cookies.txt file. Chrome keeps locking its live cookie database even after you close the window. In Chrome: install “Get cookies.txt LOCALLY”, open youtube.com while logged in, export the file, then paste the full path below.
+            </p>
+          </div>
+          <div className="field">
             <label>Use logged-in browser</label>
             <select
               value={settings.cookiesBrowser}
@@ -45,20 +73,36 @@ export default function SettingsPage() {
                 updateSettings({ cookiesBrowser: e.target.value as typeof settings.cookiesBrowser })
               }
             >
-              <option value="chrome">Chrome (recommended)</option>
+              <option value="chrome">Chrome</option>
               <option value="edge">Edge</option>
               <option value="firefox">Firefox</option>
               <option value="">None — cookies.txt only</option>
             </select>
-            <p className="sub">
-              Stay logged into YouTube in that browser. This app cannot copy another tab from here; it reads the browser cookie store on your PC. If Chrome is locking cookies, close every Chrome window and try again.
-            </p>
+            <div className="actions" style={{ justifyContent: "flex-start", marginTop: 10 }}>
+              <button
+                className="ghost"
+                type="button"
+                disabled={cookieBusy || !settings.cookiesBrowser}
+                onClick={() => void prepareCookies(false)}
+              >
+                Copy browser cookies
+              </button>
+              <button
+                className="ghost"
+                type="button"
+                disabled={cookieBusy || !settings.cookiesBrowser}
+                onClick={() => void prepareCookies(true)}
+              >
+                Stop Chrome and copy cookies
+              </button>
+            </div>
+            {cookieNote && <p className={cookieNote.startsWith("Copied") ? "ok" : "error"}>{cookieNote}</p>}
           </div>
           <div className="field">
-            <label>YouTube cookies.txt (optional backup)</label>
+            <label>YouTube cookies.txt (most reliable)</label>
             <input
               value={settings.cookiesPath}
-              placeholder="C:\Users\You\Downloads\cookies.txt"
+              placeholder="C:\Users\You\Downloads\www.youtube.com_cookies.txt"
               onChange={(e) => updateSettings({ cookiesPath: e.target.value })}
             />
           </div>
