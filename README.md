@@ -15,7 +15,25 @@ npm run dev
 - App: http://localhost:5173
 - API: http://127.0.0.1:8787
 
-YouTube downloads use `yt-dlp` (`python3 -m yt_dlp`) and `ffmpeg` for merging video + audio.
+YouTube downloads need **yt-dlp** and **ffmpeg**.
+
+Windows:
+
+```powershell
+python -m pip install -U yt-dlp
+winget install Gyan.FFmpeg
+```
+
+Then stop `npm run dev` with Ctrl+C and start it again.
+
+If the browser says localhost refused to connect, leftover Node processes are still holding the port. In PowerShell:
+
+```powershell
+taskkill /F /IM node.exe
+npm run dev
+```
+
+Then open http://localhost:5173
 
 ## Editor shortcuts
 

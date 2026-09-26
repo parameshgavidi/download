@@ -1,6 +1,6 @@
 import express from "express";
 import cors from "cors";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -25,18 +25,58 @@ app.use(cors());
 app.use(express.json({ limit: "2mb" }));
 app.use("/downloads", express.static(DEFAULT_DOWNLOADS));
 
+function resolveYtDlp() {
+  const candidates = [
+    ["yt-dlp", ["--version"]],
+    ["python", ["-m", "yt_dlp", "--version"]],
+    ["python3", ["-m", "yt_dlp", "--version"]],
+    ["py", ["-m", "yt_dlp", "--version"]],
+  ];
+  for (const [cmd, probe] of candidates) {
+    try {
+      const result = spawnSync(cmd, probe, { encoding: "utf8", windowsHide: true });
+      if (result.status === 0) {
+        const prefix = probe[0] === "-m" ? ["-m", "yt_dlp"] : [];
+        return { cmd, prefix };
+      }
+    } catch {
+      // Command is missing on this machine; try the next one.
+    }
+  }
+  return {
+    cmd: process.platform === "win32" ? "python" : "python3",
+    prefix: ["-m", "yt_dlp"],
+  };
+}
+
+let ytDlp = { cmd: process.platform === "win32" ? "python" : "python3", prefix: ["-m", "yt_dlp"] };
+
+function ensureYtDlp() {
+  ytDlp = resolveYtDlp();
+  return ytDlp;
+}
+
 function ytDlpArgs(extra, cookies) {
-  const args = ["-m", "yt_dlp", "--no-warnings", "--no-playlist"];
+  const args = [...ytDlp.prefix, "--no-warnings", "--no-playlist"];
   if (cookies && existsSync(cookies)) args.push("--cookies", cookies);
   args.push(...extra);
   return args;
 }
 
+function missingYtDlpMessage(raw = "") {
+  if (!/No module named yt_dlp|not recognized|ENOENT|cannot find/i.test(raw) && raw) return raw;
+  return process.platform === "win32"
+    ? "yt-dlp is not installed. In PowerShell run: python -m pip install -U yt-dlp"
+    : "yt-dlp is not installed. Run: python3 -m pip install -U yt-dlp";
+}
+
 function runYtDlp(args, { cwd, cookies } = {}) {
   return new Promise((resolvePromise, reject) => {
-    const child = spawn("python3", ytDlpArgs(args, cookies), {
+    ensureYtDlp();
+    const child = spawn(ytDlp.cmd, ytDlpArgs(args, cookies), {
       cwd,
       env: { ...process.env, PYTHONUNBUFFERED: "1" },
+      windowsHide: true,
     });
     let stdout = "";
     let stderr = "";
@@ -49,7 +89,7 @@ function runYtDlp(args, { cwd, cookies } = {}) {
     child.on("error", reject);
     child.on("close", (code) => {
       if (code === 0) resolvePromise({ stdout, stderr });
-      else reject(new Error(stderr.trim() || `yt-dlp exited with code ${code}`));
+      else reject(new Error(missingYtDlpMessage(stderr.trim()) || `yt-dlp exited with code ${code}`));
     });
   });
 }
@@ -186,7 +226,7 @@ app.post("/api/youtube/info", async (req, res) => {
     res.status(400).json({
       error: bot
         ? "YouTube asked this network to sign in. On your machine, export cookies.txt from a logged-in browser, set the cookies path in Settings, and try again."
-        : raw.slice(0, 400) || "Could not read this YouTube link. Check the URL and try again.",
+        : missingYtDlpMessage(raw).slice(0, 400) || "Could not read this YouTube link. Check the URL and try again.",
     });
   }
 });
@@ -229,8 +269,10 @@ app.post("/api/youtube/download", async (req, res) => {
     url,
   ];
 
-  const child = spawn("python3", ytDlpArgs(args, cookies), {
+  ensureYtDlp();
+  const child = spawn(ytDlp.cmd, ytDlpArgs(args, cookies), {
     env: { ...process.env, PYTHONUNBUFFERED: "1" },
+    windowsHide: true,
   });
 
   job.status = "downloading";
@@ -318,6 +360,14 @@ app.get("/api/downloads", (_req, res) => {
 });
 
 const port = Number(process.env.PORT || 8787);
-app.listen(port, "0.0.0.0", () => {
+const server = app.listen(port, "127.0.0.1", () => {
   console.log(`PgVideoEditor API on http://127.0.0.1:${port}`);
+});
+server.on("error", (error) => {
+  if (error.code === "EADDRINUSE") {
+    console.error(`Port ${port} is already in use. Close other Node processes and try again.`);
+  } else {
+    console.error(error);
+  }
+  process.exit(1);
 });
