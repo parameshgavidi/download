@@ -273,7 +273,7 @@ export default function AdvanceSearchPage() {
         const query = queries[index];
         try {
           const candidate = candidateByQuery.get(query);
-          const video = candidate?.ok ? candidate.video : null;
+          const video = candidate?.video || null;
           setBusy(`Downloading ${index + 1} of ${queries.length}: ${query}`);
           const payload: Record<string, string | number | undefined> = {
             keyword,
@@ -493,9 +493,7 @@ export default function AdvanceSearchPage() {
         <div className="panel" style={{ marginTop: 18 }}>
           <h3>3. Unique commercial YouTube links</h3>
           <p className="sub">
-            Check the individual commercials, then find a unique YouTube page for each one. Duplicate links are blocked.
-            We only keep clips that look like a standalone brand commercial (about 8–210 seconds, not a compilation, reaction, or reupload).
-            This is a heuristic, not a copyright or monetization check.
+            Check the phrases you want, then download the top YouTube result for each one. Duplicate links are skipped. There is no commercial / non-commercial filter.
           </p>
           <div className="actions" style={{ justifyContent: "flex-start", marginTop: 10 }}>
             <button className="ghost" type="button" disabled={!related.length} onClick={selectResolved}>Select all</button>
@@ -535,10 +533,10 @@ export default function AdvanceSearchPage() {
                     {candidate && (
                       <span className={`badge ${candidate.ok ? "ok" : candidate.duplicate ? "dup" : "no"}`}>
                         {candidate.ok
-                          ? `Commercial · ${candidate.confidence || 0}%`
+                          ? "Ready to download"
                           : candidate.duplicate
                             ? "Duplicate link"
-                            : "Not a commercial"}
+                            : "No video found"}
                         {" · "}
                         {candidate.reason}
                       </span>
