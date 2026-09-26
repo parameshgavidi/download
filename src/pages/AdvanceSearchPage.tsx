@@ -333,7 +333,7 @@ export default function AdvanceSearchPage() {
 
         {ffmpegOk === false && (
           <p className="error">
-            FFmpeg is missing, so downloads would stay as separate video + audio files. In PowerShell run: winget install Gyan.FFmpeg  then restart the app.
+            This window cannot see FFmpeg yet, even if WinGet already installed it. Close VS Code completely, reopen it, then run npm run dev again. If it still fails, in a new PowerShell window run: winget install Gyan.FFmpeg
           </p>
         )}
 

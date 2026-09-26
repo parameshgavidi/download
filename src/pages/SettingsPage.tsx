@@ -1,9 +1,18 @@
+import { useEffect, useState } from "react";
 import Sidebar from "../components/Sidebar";
 import { useAppStore } from "../store/appStore";
 
 export default function SettingsPage() {
   const settings = useAppStore((s) => s.settings);
   const updateSettings = useAppStore((s) => s.updateSettings);
+  const [ffmpeg, setFfmpeg] = useState<{ ok: boolean; path: string } | null>(null);
+
+  useEffect(() => {
+    void fetch("/api/health")
+      .then((res) => res.json())
+      .then((data) => setFfmpeg({ ok: Boolean(data.ffmpeg), path: data.ffmpegPath || "" }))
+      .catch(() => setFfmpeg({ ok: false, path: "" }));
+  }, []);
 
   return (
     <div className="app-shell">
@@ -23,8 +32,10 @@ export default function SettingsPage() {
               onChange={(e) => updateSettings({ displayName: e.target.value })}
             />
           </div>
-          <p className="sub" style={{ marginBottom: 16 }}>
-            Install FFmpeg so downloads become one MP4 instead of separate video + audio files. In PowerShell: winget install Gyan.FFmpeg
+          <p className={ffmpeg?.ok ? "ok" : "sub"} style={{ marginBottom: 16 }}>
+            {ffmpeg?.ok
+              ? `FFmpeg found${ffmpeg.path ? `: ${ffmpeg.path}` : ""}. Downloads will merge video + audio into one MP4.`
+              : "FFmpeg is not visible to this app yet. If WinGet already installed it, close VS Code completely and reopen, then run npm run dev again."}
           </p>
           <div className="field">
             <label>YouTube cookies.txt (optional)</label>

@@ -508,7 +508,7 @@ export function registerAdvanceRoutes(app, { downloadsRoot, jobs }) {
     try {
       if (!ffmpegAvailable()) {
         return res.status(400).json({
-          error: "FFmpeg is required to join video + audio into one MP4. In PowerShell run: winget install Gyan.FFmpeg  then restart the app.",
+          error: "FFmpeg is required to join video + audio into one MP4. If WinGet already installed it, close VS Code completely, reopen, and run npm run dev again.",
         });
       }
       const pack = loadPack(downloadsRoot, keyword);
