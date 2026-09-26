@@ -570,7 +570,32 @@ h1, h2, h3 { margin: 0; font-weight: 650; }
   cursor: pointer;
 }
 .check-item:hover { background: #1a1a20; }
+.check-item.blocked { opacity: 0.72; cursor: not-allowed; }
 .check-item input { margin-top: 3px; accent-color: var(--blue); }
+.check-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.check-copy strong { font-weight: 600; }
+.yt-link {
+  color: #93c5fd;
+  word-break: break-all;
+  font-size: 12px;
+}
+.yt-link:hover { color: #dbeafe; }
+.badge {
+  display: inline-block;
+  width: fit-content;
+  font-size: 12px;
+  border-radius: 999px;
+  padding: 3px 8px;
+  line-height: 1.35;
+}
+.badge.ok { background: #12351f; color: #86efac; }
+.badge.dup { background: #33270f; color: #fbbf24; }
+.badge.no { background: #3a1515; color: #fecaca; }
 
 @media (max-width: 1100px) {
   .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
