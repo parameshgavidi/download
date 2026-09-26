@@ -535,7 +535,7 @@ export default function AdvanceSearchPage() {
               );
             })}
           </div>
-          <button className="primary" onClick={() => void downloadSelected()} disabled={!keyword || selected.length === 0 || Boolean(busy)}>
+          <button className="primary" onClick={() => void downloadSelected()} disabled={!keyword || selected.length === 0 || Boolean(busy && !busy.startsWith("Saved"))}>
             {busy.startsWith("Downloading") || busy.startsWith("Saved") ? busy : `Download selected (${selected.length})`}
           </button>
           {busy && <p className="sub" style={{ marginTop: 10 }}>{busy}</p>}
