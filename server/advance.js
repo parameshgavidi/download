@@ -13,7 +13,7 @@ import { randomUUID } from "node:crypto";
 import https from "node:https";
 import http from "node:http";
 import * as XLSX from "xlsx";
-import { runYtDlp, spawnYtDlp, missingYtDlpMessage, ffmpegAvailable, mergeDownloadArgs } from "./ytdlp.js";
+import { runYtDlp, spawnYtDlp, missingYtDlpMessage, ffmpegAvailable, mergeDownloadArgs, readCookieOptions } from "./ytdlp.js";
 
 const META_DIR = "_advance";
 
@@ -435,7 +435,7 @@ export function registerAdvanceRoutes(app, { downloadsRoot, jobs }) {
 
   app.post("/api/advance/research", async (req, res) => {
     const keyword = String(req.body?.keyword || "").trim();
-    const cookies = String(req.body?.cookies || "").trim();
+    const cookies = readCookieOptions(req.body);
     if (!keyword) return res.status(400).json({ error: "Select a keyword first." });
     try {
       const videos = await searchYoutube(keyword, cookies, 8);
@@ -467,7 +467,7 @@ export function registerAdvanceRoutes(app, { downloadsRoot, jobs }) {
   app.post("/api/advance/resolve", async (req, res) => {
     const keyword = safeKeyword(req.body?.keyword);
     const queries = [...new Set((req.body?.queries || []).map((item) => String(item).trim()).filter(Boolean))];
-    const cookies = String(req.body?.cookies || "").trim();
+    const cookies = readCookieOptions(req.body);
     if (!keyword || !queries.length) return res.status(400).json({ error: "Select at least one commercial phrase." });
     const pack = loadPack(downloadsRoot, keyword);
     const sourceId = req.body?.sourceVideoId || pack.sourceVideoId || pack.research?.top?.id;
@@ -506,7 +506,7 @@ export function registerAdvanceRoutes(app, { downloadsRoot, jobs }) {
   app.post("/api/advance/download-top", async (req, res) => {
     const keyword = safeKeyword(req.body?.keyword);
     const query = String(req.body?.query || req.body?.keyword || "").trim();
-    const cookies = String(req.body?.cookies || "").trim();
+    const cookies = readCookieOptions(req.body);
     if (!keyword || !query) return res.status(400).json({ error: "Select a keyword and a search phrase." });
     try {
       if (!ffmpegAvailable()) {

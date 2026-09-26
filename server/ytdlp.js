@@ -34,8 +34,11 @@ export function ensureYtDlp() {
 }
 
 export function youtubeBotMessage(raw = "") {
+  if (/cookie database|could not copy|failed to decrypt/i.test(raw)) {
+    return "Chrome is locking its cookies. Close every Chrome window, then try Download again. Settings can also use a cookies.txt file.";
+  }
   if (!/sign in to confirm|not a bot|cookies-from-browser|--cookies/i.test(raw)) return "";
-  return "YouTube blocked this request (bot check). Export cookies.txt from a Chrome window that is logged into YouTube, paste the full file path in Settings, then try again. Close other YouTube tabs if it still fails.";
+  return "YouTube blocked this request (bot check). In Settings choose “Use Chrome login”, keep Chrome logged into YouTube, then try again. If Chrome is open and it still fails, close Chrome first.";
 }
 
 export function missingYtDlpMessage(raw = "") {
@@ -158,11 +161,22 @@ export function ffmpegAvailable() {
   return Boolean(resolveFfmpeg());
 }
 
+const BROWSERS = new Set(["chrome", "edge", "firefox", "brave", "opera", "chromium"]);
+
+export function readCookieOptions(body = {}) {
+  return {
+    file: String(body.cookies || "").trim(),
+    browser: String(body.cookiesBrowser || "").trim().toLowerCase(),
+  };
+}
+
 export function ytDlpArgs(extra, cookies) {
+  const auth = typeof cookies === "string" ? { file: cookies, browser: "" } : cookies || {};
   const args = [...cached.prefix, "--no-warnings"];
   const ffmpeg = resolveFfmpeg();
   if (ffmpeg) args.push("--ffmpeg-location", ffmpeg);
-  if (cookies && existsSync(cookies)) args.push("--cookies", cookies);
+  if (auth.browser && BROWSERS.has(auth.browser)) args.push("--cookies-from-browser", auth.browser);
+  else if (auth.file && existsSync(auth.file)) args.push("--cookies", auth.file);
   args.push(...extra);
   return args;
 }

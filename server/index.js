@@ -12,7 +12,7 @@ import { join, resolve, basename, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import os from "node:os";
 import { randomUUID } from "node:crypto";
-import { runYtDlp, spawnYtDlp, missingYtDlpMessage, ffmpegAvailable, resolveFfmpeg } from "./ytdlp.js";
+import { runYtDlp, spawnYtDlp, missingYtDlpMessage, ffmpegAvailable, resolveFfmpeg, readCookieOptions } from "./ytdlp.js";
 import { registerAdvanceRoutes } from "./advance.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -156,7 +156,7 @@ app.post("/api/youtube/info", async (req, res) => {
   if (!url) return res.status(400).json({ error: "Paste a YouTube link first." });
 
   try {
-    const cookies = String(req.body?.cookies || "").trim();
+    const cookies = readCookieOptions(req.body);
     const { stdout } = await runYtDlp(["-J", "--skip-download", "--no-playlist", url], { cookies });
     const info = JSON.parse(stdout);
     const { presets, formats } = pickFormats(info);
@@ -185,7 +185,7 @@ app.post("/api/youtube/info", async (req, res) => {
 app.post("/api/youtube/download", async (req, res) => {
   const url = String(req.body?.url || "").trim();
   const formatId = String(req.body?.formatId || "bv*+ba/b");
-  const cookies = String(req.body?.cookies || "").trim();
+  const cookies = readCookieOptions(req.body);
   const outputDir = safeJoin(DEFAULT_DOWNLOADS, req.body?.path || DEFAULT_DOWNLOADS);
   if (!url) return res.status(400).json({ error: "Paste a YouTube link first." });
 

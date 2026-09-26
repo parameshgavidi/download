@@ -2,7 +2,7 @@ import { FolderOpen } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import Sidebar from "../components/Sidebar";
 import { formatBytes, formatClock } from "../lib/time";
-import { useAppStore } from "../store/appStore";
+import { useAppStore, youtubeAuth } from "../store/appStore";
 import type { YoutubeInfo } from "../types";
 
 interface PathInfo {
@@ -85,7 +85,7 @@ export default function DownloaderPage() {
       const res = await fetch("/api/youtube/info", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url, cookies: settings.cookiesPath }),
+        body: JSON.stringify({ url, ...youtubeAuth(settings) }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
@@ -105,7 +105,7 @@ export default function DownloaderPage() {
       const res = await fetch("/api/youtube/download", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url, formatId, path, cookies: settings.cookiesPath }),
+        body: JSON.stringify({ url, formatId, path, ...youtubeAuth(settings) }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
