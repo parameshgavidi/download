@@ -262,52 +262,88 @@ export default function AdvanceSearchPage() {
   }
 
   async function downloadSelected() {
-    if (!keyword || selected.length === 0) return;
+    const queries = [...selected];
+    if (!keyword || queries.length === 0) return;
     setError("");
+    let saved = 0;
+    const problems: string[] = [];
     try {
-      let items = candidates.filter((item) => selected.includes(item.query));
-      const missing = selected.some((query) => !candidateByQuery.get(query)?.video);
-      if (!items.length || missing) {
-        items = await resolveLinks(selected);
-      }
-      const ready = items.filter((item) => item.ok && item.video);
-      if (!ready.length) {
-        throw new Error("No unique commercial YouTube links to download. Find links first and skip duplicates or non-commercials.");
-      }
-      for (let index = 0; index < ready.length; index += 1) {
-        const item = ready[index];
-        const video = item.video!;
-        setBusy(`Downloading ${index + 1} of ${ready.length}: ${item.query}`);
-        const res = await fetch("/api/advance/download-top", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
+      for (let index = 0; index < queries.length; index += 1) {
+        const query = queries[index];
+        try {
+          const candidate = candidateByQuery.get(query);
+          const video = candidate?.ok ? candidate.video : null;
+          setBusy(`Downloading ${index + 1} of ${queries.length}: ${query}`);
+          const payload: Record<string, string | number | undefined> = {
             keyword,
-            query: item.query,
+            query,
             cookies: settings.cookiesPath,
             sourceVideoId: top?.id,
-            url: youtubeHref(video),
-            videoId: video.id,
-            title: video.title,
-            views: video.views,
-            duration: video.duration,
-            channel: video.channel,
-            thumbnail: video.thumbnail,
-          }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || `Failed on “${item.query}”`);
-        if (data.already) {
-          setPack(data.pack);
-        } else if (data.jobId) {
-          await pollJob(data.jobId);
+          };
+          if (video && youtubeHref(video)) {
+            payload.url = youtubeHref(video);
+            payload.videoId = video.id;
+            payload.title = video.title;
+            payload.views = video.views;
+            payload.duration = video.duration;
+            payload.channel = video.channel;
+            payload.thumbnail = video.thumbnail;
+          }
+          const res = await fetch("/api/advance/download-top", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            problems.push(`${query}: ${data.error || "download failed"}`);
+            continue;
+          }
+          if (data.already) {
+            setPack(data.pack);
+            saved += 1;
+          } else if (data.jobId) {
+            await pollJob(data.jobId);
+            saved += 1;
+          }
+          const packRes = await fetch(`/api/advance/packs/${encodeURIComponent(keyword)}`);
+          if (packRes.ok) setPack(await packRes.json());
+          await refreshPacks();
+        } catch (itemError) {
+          problems.push(`${query}: ${itemError instanceof Error ? itemError.message : "download failed"}`);
         }
-        const packRes = await fetch(`/api/advance/packs/${encodeURIComponent(keyword)}`);
-        if (packRes.ok) setPack(await packRes.json());
-        await refreshPacks();
       }
+      if (problems.length) {
+        setError(problems.join(" · "));
+      }
+      if (saved) setBusy(`Saved ${saved} of ${queries.length} videos.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Download failed.");
+    } finally {
+      if (!saved) setBusy("");
+    }
+  }
+
+  async function deleteLocalVideo(video: PackVideo) {
+    if (!keyword) return;
+    const ok = window.confirm(`Delete “${video.title}” from this computer?`);
+    if (!ok) return;
+    setError("");
+    setBusy(`Deleting ${video.title}…`);
+    try {
+      const res = await fetch(
+        `/api/advance/packs/${encodeURIComponent(keyword)}/videos/${encodeURIComponent(video.id || video.filename || "")}`,
+        { method: "DELETE" },
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not delete that video.");
+      setPack(data);
+      setMergeOrder((current) => current.filter((id) => id !== video.id));
+      setMergeSelected((current) => current.filter((id) => id !== video.id));
+      if (preview?.id === video.id) setPreview(null);
+      await refreshPacks();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not delete that video.");
     } finally {
       setBusy("");
     }
@@ -499,9 +535,11 @@ export default function AdvanceSearchPage() {
               );
             })}
           </div>
-          <button className="primary" onClick={() => void downloadSelected()} disabled={!keyword || selected.length === 0 || Boolean(busy) || ffmpegOk === false}>
-            Download selected ({downloadable.length || selected.length})
+          <button className="primary" onClick={() => void downloadSelected()} disabled={!keyword || selected.length === 0 || Boolean(busy && !busy.startsWith("Saved"))}>
+            {busy.startsWith("Downloading") || busy.startsWith("Saved") ? busy : `Download selected (${selected.length})`}
           </button>
+          {busy && <p className="sub" style={{ marginTop: 10 }}>{busy}</p>}
+          {error && <p className="error" style={{ marginTop: 8 }}>{error}</p>}
           {job && (
             <div style={{ marginTop: 14 }}>
               <div className="progress"><span style={{ width: `${job.progress}%` }} /></div>
@@ -534,7 +572,10 @@ export default function AdvanceSearchPage() {
                       {video.fileUrl ? "Downloaded MP4 ready" : "No local file — download first"}
                     </span>
                   </div>
-                  <button className="ghost" type="button" onClick={() => setPreview(video)}>Review</button>
+                  <div className="review-actions">
+                    <button className="ghost" type="button" onClick={() => setPreview(video)}>Review</button>
+                    <button className="ghost danger-btn" type="button" onClick={() => void deleteLocalVideo(video)}>Delete</button>
+                  </div>
                 </div>
               ))}
             </div>
