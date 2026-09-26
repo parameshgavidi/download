@@ -100,6 +100,16 @@ export default function AdvanceSearchPage() {
       .catch(() => setFfmpegOk(null));
   }, []);
 
+  useEffect(() => {
+    const current = packs.find((item) => item.keyword === keyword);
+    if (!current) return;
+    setPack(current);
+    if (related.length === 0 && current.related?.length) {
+      setRelated(current.related);
+      setSelected(current.related);
+    }
+  }, [packs, keyword, related.length]);
+
   const selectedPack = useMemo(
     () => packs.find((item) => item.keyword === keyword) || pack,
     [packs, keyword, pack],
@@ -512,7 +522,7 @@ export default function AdvanceSearchPage() {
           <div className="downloads-list">
             {packs.length === 0 && <div className="sub">Download a top viewed video to create a keyword folder.</div>}
             {packs.map((item) => (
-              <button key={item.keyword} className="download-row" style={{ width: "100%", textAlign: "left" }} onClick={() => { setKeyword(item.keyword); setPack(item); }}>
+              <button key={item.keyword} className="download-row" style={{ width: "100%", textAlign: "left" }} onClick={() => { setKeyword(item.keyword); setPack(item); setRelated(item.related || []); setSelected(item.related || []); setCandidates([]); }}>
                 <span style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
                   <FolderOpen size={16} /> {item.keyword}
                 </span>

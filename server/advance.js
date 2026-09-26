@@ -116,7 +116,7 @@ async function searchYoutube(query, cookies, limit = 10) {
 const COPY_MARKERS = /reupload|re-upload|copied from|from youtube|no copyright intended|full compilation|all ads in one|mirrored upload|youtube copy|not the official/i;
 const COMPILATION_MARKERS = /compilation|top\s*\d+|top ten|countdown|every super bowl|famous funny commercials|best ads|ads ranked/i;
 const ENTERTAINMENT_MARKERS = /music video|full movie|gameplay|podcast|vlog|live stream|reaction|reacts to|explained|behind the scenes|making of|leaked audio|full album/i;
-const COMMERCIAL_MARKERS = /official|commercial|advert|tv ad|tv spot|super bowl ad|brand film| :15| :30| :60|15s|30s|60s|30-second|60-second/i;
+const COMMERCIAL_MARKERS = /commercial|advert|tv ad|tv spot|super bowl ad|brand film| :15| :30| :60|\b15s\b|\b30s\b|\b60s\b|30-second|60-second/i;
 
 function isYoutubeCopy(video, sourceId) {
   if (sourceId && video.id === sourceId) return true;
@@ -135,6 +135,7 @@ function commercialScore(video, query) {
   let score = Number(video.views) || 0;
   if (video.duration >= 15 && video.duration <= 90) score *= 1.2;
   if (COMMERCIAL_MARKERS.test(video.title)) score *= 1.12;
+  if (/official/i.test(video.title) && COMMERCIAL_MARKERS.test(video.title)) score *= 1.05;
   const words = String(query).toLowerCase().split(/[^a-z0-9]+/).filter((word) => word.length > 2);
   const title = video.title.toLowerCase();
   score *= 1 + words.filter((word) => title.includes(word)).length * 0.06;
@@ -155,12 +156,13 @@ function judgeCommercial(video, query = "") {
   if (video.duration && video.duration < 8) return { ok: false, reason: "Too short for a TV commercial", confidence: 15 };
   if (video.duration && video.duration > 210) return { ok: false, reason: "Too long — likely a compilation, not one commercial", confidence: 20 };
   const text = `${video.title} ${video.description || ""} ${query}`;
-  if (ENTERTAINMENT_MARKERS.test(text) && !COMMERCIAL_MARKERS.test(video.title)) {
+  if (ENTERTAINMENT_MARKERS.test(text) && !COMMERCIAL_MARKERS.test(text)) {
     return { ok: false, reason: "Looks like entertainment, not a brand commercial", confidence: 20 };
   }
   let confidence = 55;
   if (video.duration >= 15 && video.duration <= 90) confidence += 20;
   if (COMMERCIAL_MARKERS.test(text)) confidence += 15;
+  if (/official/i.test(video.title) && COMMERCIAL_MARKERS.test(video.title)) confidence += 5;
   const firstWord = String(query).toLowerCase().split(/[^a-z0-9]+/).find((word) => word.length > 2);
   if (firstWord && video.title.toLowerCase().includes(firstWord)) confidence += 5;
   return {
@@ -404,6 +406,8 @@ function publicPack(root, pack) {
     folder: packDir(root, keyword),
   };
 }
+
+export { judgeCommercial, youtubeIdFrom, canonicalYoutubeUrl };
 
 export function registerAdvanceRoutes(app, { downloadsRoot, jobs }) {
   const metaPath = join(downloadsRoot, META_DIR, "keywords.json");
