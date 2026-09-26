@@ -26,6 +26,15 @@ winget install Gyan.FFmpeg
 
 Then stop `npm run dev` with Ctrl+C and start it again.
 
+If the browser says localhost refused to connect, leftover Node processes are still holding the port. In PowerShell:
+
+```powershell
+taskkill /F /IM node.exe
+npm run dev
+```
+
+Then open http://localhost:5173
+
 ## Editor shortcuts
 
 - Space — play / pause

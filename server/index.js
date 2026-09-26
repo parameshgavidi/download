@@ -33,10 +33,14 @@ function resolveYtDlp() {
     ["py", ["-m", "yt_dlp", "--version"]],
   ];
   for (const [cmd, probe] of candidates) {
-    const result = spawnSync(cmd, probe, { encoding: "utf8", windowsHide: true });
-    if (result.status === 0) {
-      const prefix = probe[0] === "-m" ? ["-m", "yt_dlp"] : [];
-      return { cmd, prefix };
+    try {
+      const result = spawnSync(cmd, probe, { encoding: "utf8", windowsHide: true });
+      if (result.status === 0) {
+        const prefix = probe[0] === "-m" ? ["-m", "yt_dlp"] : [];
+        return { cmd, prefix };
+      }
+    } catch {
+      // Command is missing on this machine; try the next one.
     }
   }
   return {
@@ -45,7 +49,12 @@ function resolveYtDlp() {
   };
 }
 
-const ytDlp = resolveYtDlp();
+let ytDlp = { cmd: process.platform === "win32" ? "python" : "python3", prefix: ["-m", "yt_dlp"] };
+
+function ensureYtDlp() {
+  ytDlp = resolveYtDlp();
+  return ytDlp;
+}
 
 function ytDlpArgs(extra, cookies) {
   const args = [...ytDlp.prefix, "--no-warnings", "--no-playlist"];
@@ -63,6 +72,7 @@ function missingYtDlpMessage(raw = "") {
 
 function runYtDlp(args, { cwd, cookies } = {}) {
   return new Promise((resolvePromise, reject) => {
+    ensureYtDlp();
     const child = spawn(ytDlp.cmd, ytDlpArgs(args, cookies), {
       cwd,
       env: { ...process.env, PYTHONUNBUFFERED: "1" },
@@ -216,7 +226,7 @@ app.post("/api/youtube/info", async (req, res) => {
     res.status(400).json({
       error: bot
         ? "YouTube asked this network to sign in. On your machine, export cookies.txt from a logged-in browser, set the cookies path in Settings, and try again."
-        : raw.slice(0, 400) || "Could not read this YouTube link. Check the URL and try again.",
+        : missingYtDlpMessage(raw).slice(0, 400) || "Could not read this YouTube link. Check the URL and try again.",
     });
   }
 });
@@ -259,6 +269,7 @@ app.post("/api/youtube/download", async (req, res) => {
     url,
   ];
 
+  ensureYtDlp();
   const child = spawn(ytDlp.cmd, ytDlpArgs(args, cookies), {
     env: { ...process.env, PYTHONUNBUFFERED: "1" },
     windowsHide: true,
@@ -349,6 +360,14 @@ app.get("/api/downloads", (_req, res) => {
 });
 
 const port = Number(process.env.PORT || 8787);
-app.listen(port, "0.0.0.0", () => {
+const server = app.listen(port, "127.0.0.1", () => {
   console.log(`PgVideoEditor API on http://127.0.0.1:${port}`);
+});
+server.on("error", (error) => {
+  if (error.code === "EADDRINUSE") {
+    console.error(`Port ${port} is already in use. Close other Node processes and try again.`);
+  } else {
+    console.error(error);
+  }
+  process.exit(1);
 });
