@@ -1,5 +1,7 @@
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
+import { delimiter, dirname, join } from "node:path";
+import os from "node:os";
 
 export function resolveYtDlp() {
   const candidates = [
@@ -38,8 +40,121 @@ export function missingYtDlpMessage(raw = "") {
     : "yt-dlp is not installed. Run: python3 -m pip install -U yt-dlp";
 }
 
+function worksAsFfmpeg(cmd) {
+  if (!cmd) return false;
+  try {
+    const result = spawnSync(cmd, ["-version"], { encoding: "utf8", windowsHide: true });
+    return result.status === 0 && /ffmpeg version/i.test(`${result.stdout || ""}\n${result.stderr || ""}`);
+  } catch {
+    return false;
+  }
+}
+
+function findFfmpegFile(dir, depth = 0) {
+  if (!dir || depth > 4 || !existsSync(dir)) return "";
+  const names = process.platform === "win32" ? ["ffmpeg.exe"] : ["ffmpeg"];
+  for (const name of names) {
+    const direct = join(dir, name);
+    if (existsSync(direct) && worksAsFfmpeg(direct)) return direct;
+    const nested = join(dir, "bin", name);
+    if (existsSync(nested) && worksAsFfmpeg(nested)) return nested;
+  }
+  try {
+    for (const name of readdirSync(dir)) {
+      const full = join(dir, name);
+      try {
+        if (statSync(full).isDirectory()) {
+          const found = findFfmpegFile(full, depth + 1);
+          if (found) return found;
+        }
+      } catch {
+        // skip locked folders
+      }
+    }
+  } catch {
+    // skip unreadable folders
+  }
+  return "";
+}
+
+function windowsFfmpegCandidates() {
+  const home = os.homedir();
+  const local = process.env.LOCALAPPDATA || join(home, "AppData", "Local");
+  const programFiles = process.env.ProgramFiles || "C:\\Program Files";
+  const found = [];
+  const links = join(local, "Microsoft", "WinGet", "Links", "ffmpeg.exe");
+  if (existsSync(links)) found.push(links);
+  const packages = join(local, "Microsoft", "WinGet", "Packages");
+  if (existsSync(packages)) {
+    try {
+      for (const name of readdirSync(packages)) {
+        if (!/ffmpeg/i.test(name)) continue;
+        const match = findFfmpegFile(join(packages, name));
+        if (match) found.push(match);
+      }
+    } catch {
+      // keep looking
+    }
+  }
+  for (const root of [
+    "C:\\ffmpeg",
+    join(programFiles, "ffmpeg"),
+    join(programFiles, "Gyan", "FFmpeg"),
+    join(home, "scoop", "apps", "ffmpeg", "current"),
+    join(home, "scoop", "shims"),
+    "C:\\ProgramData\\chocolatey\\bin",
+  ]) {
+    const match = findFfmpegFile(root);
+    if (match) found.push(match);
+  }
+  return found;
+}
+
+let ffmpegPath = "";
+
+export function resolveFfmpeg() {
+  if (ffmpegPath === "ffmpeg" || ffmpegPath === "ffmpeg.exe") return ffmpegPath;
+  if (ffmpegPath && existsSync(ffmpegPath)) return ffmpegPath;
+
+  for (const cmd of process.platform === "win32" ? ["ffmpeg.exe", "ffmpeg"] : ["ffmpeg"]) {
+    if (worksAsFfmpeg(cmd)) {
+      ffmpegPath = cmd;
+      return ffmpegPath;
+    }
+  }
+
+  if (process.platform === "win32") {
+    try {
+      const result = spawnSync("where.exe", ["ffmpeg"], { encoding: "utf8", windowsHide: true });
+      for (const line of String(result.stdout || "").split(/\r?\n/)) {
+        const candidate = line.trim();
+        if (candidate && worksAsFfmpeg(candidate)) {
+          ffmpegPath = candidate;
+          return ffmpegPath;
+        }
+      }
+    } catch {
+      // keep looking in install folders
+    }
+    for (const candidate of windowsFfmpegCandidates()) {
+      if (worksAsFfmpeg(candidate)) {
+        ffmpegPath = candidate;
+        return ffmpegPath;
+      }
+    }
+  }
+
+  return "";
+}
+
+export function ffmpegAvailable() {
+  return Boolean(resolveFfmpeg());
+}
+
 export function ytDlpArgs(extra, cookies) {
   const args = [...cached.prefix, "--no-warnings"];
+  const ffmpeg = resolveFfmpeg();
+  if (ffmpeg) args.push("--ffmpeg-location", ffmpeg);
   if (cookies && existsSync(cookies)) args.push("--cookies", cookies);
   args.push(...extra);
   return args;
@@ -47,19 +162,18 @@ export function ytDlpArgs(extra, cookies) {
 
 export function spawnYtDlp(extra, cookies) {
   ensureYtDlp();
+  const ffmpeg = resolveFfmpeg();
+  const pathPrefix = ffmpeg && (ffmpeg.includes("\\") || ffmpeg.includes("/"))
+    ? `${dirname(ffmpeg)}${delimiter}`
+    : "";
   return spawn(cached.cmd, ytDlpArgs(extra, cookies), {
-    env: { ...process.env, PYTHONUNBUFFERED: "1" },
+    env: {
+      ...process.env,
+      PYTHONUNBUFFERED: "1",
+      PATH: `${pathPrefix}${process.env.PATH || process.env.Path || ""}`,
+    },
     windowsHide: true,
   });
-}
-
-export function ffmpegAvailable() {
-  try {
-    const result = spawnSync("ffmpeg", ["-version"], { encoding: "utf8", windowsHide: true });
-    return result.status === 0;
-  } catch {
-    return false;
-  }
 }
 
 export function mergeDownloadArgs(outputTemplate) {

@@ -12,7 +12,7 @@ import { join, resolve, basename, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import os from "node:os";
 import { randomUUID } from "node:crypto";
-import { runYtDlp, spawnYtDlp, missingYtDlpMessage, ffmpegAvailable } from "./ytdlp.js";
+import { runYtDlp, spawnYtDlp, missingYtDlpMessage, ffmpegAvailable, resolveFfmpeg } from "./ytdlp.js";
 import { registerAdvanceRoutes } from "./advance.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -110,7 +110,7 @@ function cleanupSplitFiles(dir) {
 }
 
 app.get("/api/health", (_req, res) => {
-  res.json({ ok: true, app: "PgVideoEditor", ffmpeg: ffmpegAvailable() });
+  res.json({ ok: true, app: "PgVideoEditor", ffmpeg: ffmpegAvailable(), ffmpegPath: resolveFfmpeg() || "" });
 });
 
 app.get("/api/paths", (req, res) => {
@@ -197,7 +197,7 @@ app.post("/api/youtube/download", async (req, res) => {
 
   if (needsMerge(formatId) && !ffmpegAvailable()) {
     return res.status(400).json({
-      error: "FFmpeg is required to join video + audio into one MP4. In PowerShell run: winget install Gyan.FFmpeg  then restart the app.",
+      error: "FFmpeg is required to join video + audio into one MP4. If WinGet already installed it, close VS Code completely, reopen, and run npm run dev again.",
     });
   }
 
