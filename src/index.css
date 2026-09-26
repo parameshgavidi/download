@@ -630,6 +630,12 @@ h1, h2, h3 { margin: 0; font-weight: 650; }
   gap: 4px;
   min-width: 0;
 }
+.review-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.danger-btn:hover { border-color: #ef4444; color: #fecaca; background: #3a1515; }
 .review-modal { width: min(880px, calc(100vw - 32px)); }
 .review-player {
   width: 100%;

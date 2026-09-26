@@ -611,6 +611,29 @@ export function registerAdvanceRoutes(app, { downloadsRoot, jobs }) {
     res.json(publicPack(downloadsRoot, pack));
   });
 
+  app.delete("/api/advance/packs/:keyword/videos/:id", (req, res) => {
+    const keyword = safeKeyword(req.params.keyword);
+    const id = decodeURIComponent(String(req.params.id || ""));
+    const pack = loadPack(downloadsRoot, keyword);
+    const index = pack.videos.findIndex((video) => video.id === id || video.filename === id);
+    if (index < 0) return res.status(404).json({ error: "That video is not in this folder." });
+    const video = pack.videos[index];
+    const videoDir = join(packDir(downloadsRoot, keyword), "videos");
+    if (video.filename) {
+      const file = join(videoDir, video.filename);
+      if (existsSync(file)) {
+        try {
+          unlinkSync(file);
+        } catch {
+          // file may already be gone
+        }
+      }
+    }
+    cleanupSplitFiles(videoDir, video.id);
+    pack.videos.splice(index, 1);
+    res.json(publicPack(downloadsRoot, savePack(downloadsRoot, pack)));
+  });
+
   app.get("/api/advance/packs/:keyword/ranking.xlsx", (req, res) => {
     const file = join(packDir(downloadsRoot, req.params.keyword), "ranking.xlsx");
     if (!existsSync(file)) return res.status(404).json({ error: "Ranking sheet not created yet." });
