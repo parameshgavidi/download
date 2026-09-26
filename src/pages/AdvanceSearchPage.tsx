@@ -162,7 +162,7 @@ export default function AdvanceSearchPage() {
         const res = await fetch("/api/advance/download-top", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ keyword, query, cookies: settings.cookiesPath }),
+          body: JSON.stringify({ keyword, query, cookies: settings.cookiesPath, sourceVideoId: top?.id }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || `Failed on “${query}”`);
@@ -269,7 +269,7 @@ export default function AdvanceSearchPage() {
 
         <div className="panel" style={{ marginTop: 18 }}>
           <h3>3. Choose phrases and download each top viewed video</h3>
-          <p className="sub">Check the ads or phrases you want. Each selected item is searched on YouTube and the highest-viewed video is saved in the keyword folder.</p>
+          <p className="sub">Check the individual commercials. We skip the source countdown and YouTube reuploads, then save only the commercial spot into the keyword folder.</p>
           <div className="actions" style={{ justifyContent: "flex-start", marginTop: 10 }}>
             <button className="ghost" type="button" disabled={!related.length} onClick={() => setSelected(related)}>Select all</button>
             <button className="ghost" type="button" disabled={!selected.length} onClick={() => setSelected([])}>Clear</button>
@@ -296,8 +296,9 @@ export default function AdvanceSearchPage() {
         </div>
 
         <div className="panel" style={{ marginTop: 18 }}>
-          <h3>4. Keyword folder · merge in top-view order</h3>
-          <p className="sub">Clips are saved in <code>downloads\{keyword || "keyword"}</code>. The editor loads this folder and lines them up from most viewed to least viewed.</p>
+          <h3>4. Merge by each commercial’s own views</h3>
+          <p className="sub">Order is not copied from the source countdown. Rank 1 is the commercial with the most views on its own YouTube page. Title, description, and tags are rewritten from this new ranking.</p>
+          <p className="sub">Brand ads may be copyrighted. This app does not bypass Content ID or make a compilation monetizable. Upload only what you have rights to use.</p>
           {selectedPack?.videos.length ? (
             <table className="rank-table">
               <thead>
@@ -338,7 +339,7 @@ export default function AdvanceSearchPage() {
 
         {selectedPack?.metadata && selectedPack.videos.length > 0 && (
           <div className="panel" style={{ marginTop: 18 }}>
-            <h3>YouTube upload pack</h3>
+            <h3>New upload pack (not copied from the source video)</h3>
             {selectedPack.metadata.thumbnail && (
               <img src={selectedPack.metadata.thumbnail} alt="" style={{ width: 280, borderRadius: 12, margin: "10px 0" }} />
             )}
